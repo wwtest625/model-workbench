@@ -25,19 +25,19 @@ type LocalModelAsset struct {
 }
 
 type HubModelItem struct {
-	ID          string            `json:"id"`
-	Name        string            `json:"name"`
-	Owner       string            `json:"owner"`
-	Description string            `json:"description"`
-	Downloads   int               `json:"downloads"`
-	UpdatedAt   string            `json:"updated_at"`
-	FileSize    int64             `json:"file_size"`
-	Tags        []string          `json:"tags"`
-	LocalStatus string            `json:"local_status"` // LOCAL_76, LOCAL_TEST03, CLOUD_ONLY
-	LocalPath   string            `json:"local_path"`
-	LocalMeta   *LocalModelAsset  `json:"local_meta,omitempty"`
-	DownloadCmd string            `json:"download_cmd"`
-	RsyncCmd    string            `json:"rsync_cmd"`
+	ID          string           `json:"id"`
+	Name        string           `json:"name"`
+	Owner       string           `json:"owner"`
+	Description string           `json:"description"`
+	Downloads   int              `json:"downloads"`
+	UpdatedAt   string           `json:"updated_at"`
+	FileSize    int64            `json:"file_size"`
+	Tags        []string         `json:"tags"`
+	LocalStatus string           `json:"local_status"` // LOCAL_76, LOCAL_TEST03, CLOUD_ONLY
+	LocalPath   string           `json:"local_path"`
+	LocalMeta   *LocalModelAsset `json:"local_meta,omitempty"`
+	DownloadCmd string           `json:"download_cmd"`
+	RsyncCmd    string           `json:"rsync_cmd"`
 }
 
 type HubManager struct {
@@ -55,7 +55,7 @@ func GetHubManager() *HubManager {
 	return defaultHubManager
 }
 
-// scanServerDeepByConfigJson 深入递归查找服务器上所有的 config.json 提取真实模型身份凭证
+// scanServerDeepByConfigJson 毫秒级极速扫描 config.json 提取模型身份凭证（不统计文件大小以保证瞬时响应）
 func scanServerDeepByConfigJson(serverIP string, rootPath string, serverLabel string, sType string) []LocalModelAsset {
 	sh := fmt.Sprintf(`
 python3 -c '
@@ -63,16 +63,14 @@ import os, json, glob, time
 root = "%s"
 results = []
 if os.path.exists(root):
-    for cpath in glob.glob(f"{root}/**/config.json", recursive=True):
+    for cpath in glob.glob(root + "/**/config.json", recursive=True):
         parent = os.path.dirname(cpath)
         bname = os.path.basename(parent)
-        # 过滤扩散模型等子组件目录
         if bname in ["vae", "text_encoder", "audio_vae", "video_vae", "transformer", "transformer_ref", "tokenizer", "source"]:
             continue
         try:
             with open(cpath, "r", encoding="utf-8") as f:
                 cfg = json.load(f)
-            # 如果没有 model_type 且没有 architectures，可能是子模块
             mtype = cfg.get("model_type", "")
             archs = cfg.get("architectures", [])
             if not mtype and not archs:
@@ -105,7 +103,7 @@ print(json.dumps(results, ensure_ascii=False))
 ' 2>/dev/null
 `, rootPath)
 
-	res, err := runner.RunCmd(serverIP, sh, 18)
+	res, err := runner.RunCmd(serverIP, sh, 10)
 	if err != nil || !res.OK {
 		return nil
 	}
@@ -155,17 +153,17 @@ func (h *HubManager) ScanLocalAssets(force bool) ([]LocalModelAsset, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	if !force && len(h.localCache) > 0 && time.Since(h.cacheUpdatedAt) < 2*time.Minute {
+	if !force && len(h.localCache) > 0 && time.Since(h.cacheUpdatedAt) < 3*time.Minute {
 		return h.localCache, nil
 	}
 
 	var assets []LocalModelAsset
 
-	// 1. 深入扫描 76 主力服务器 (/data/AI_model/)
+	// 1. 毫秒级扫描 76 主力服务器 (/data/AI_model/)
 	list76 := scanServerDeepByConfigJson("192.2.56.76", "/data/AI_model", "76 (主力存储)", "MAIN")
 	assets = append(assets, list76...)
 
-	// 2. 深入扫描 test03 历史仓库 (/HDD_Raid/SVN_MODEL_REPO/Model/)
+	// 2. 毫秒级扫描 test03 历史仓库 (/HDD_Raid/SVN_MODEL_REPO/Model/)
 	list29 := scanServerDeepByConfigJson("192.2.29.9", "/HDD_Raid/SVN_MODEL_REPO/Model", "test03 (历史仓库)", "ARCHIVE")
 	assets = append(assets, list29...)
 

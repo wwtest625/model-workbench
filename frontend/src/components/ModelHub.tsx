@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react'
-import { Search, Download, Copy, Check, HardDrive, Cloud, ShieldCheck, CheckCircle2, RotateCw, ExternalLink, Cpu, Layers } from 'lucide-react'
+import React, { useState, useEffect, useMemo } from 'react'
+import { Search, Download, Copy, Check, HardDrive, Cloud, Server, CheckCircle2, RotateCw, ExternalLink, Database } from 'lucide-react'
 
 interface LocalAsset {
   name: string
@@ -12,7 +12,7 @@ interface LocalAsset {
   quant_method: string
   max_position: number
   time: string
-  type: string
+  type: 'MAIN' | 'ARCHIVE'
 }
 
 interface HubModelItem {
@@ -32,6 +32,8 @@ interface HubModelItem {
 
 export const ModelHub: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'search' | 'local'>('search')
+  const [localServerFilter, setLocalServerFilter] = useState<'ALL' | 'MAIN' | 'ARCHIVE'>('ALL')
+  const [localSearch, setLocalSearch] = useState('')
   const [query, setQuery] = useState('')
   const [selectedOrg, setSelectedOrg] = useState('metax-tech')
   const [searching, setSearching] = useState(false)
@@ -57,7 +59,7 @@ export const ModelHub: React.FC = () => {
   const fetchLocalAssets = async (force: boolean) => {
     setLoadingLocal(true)
     try {
-      const res = await fetch(`/api/v1/hub/local?force=${force}`)
+      const res = await fetch('/api/v1/hub/local?force=' + force)
       const data = await res.json()
       setLocalAssets(data.assets || [])
     } catch (e) {
@@ -71,7 +73,7 @@ export const ModelHub: React.FC = () => {
     if (e) e.preventDefault()
     setSearching(true)
     try {
-      const res = await fetch(`/api/v1/hub/search?org=${encodeURIComponent(selectedOrg)}&q=${encodeURIComponent(query)}`)
+      const res = await fetch('/api/v1/hub/search?org=' + encodeURIComponent(selectedOrg) + '&q=' + encodeURIComponent(query))
       const data = await res.json()
       setSearchResults(data.models || [])
     } catch (e) {
@@ -88,7 +90,7 @@ export const ModelHub: React.FC = () => {
   }
 
   const handleStartDownload = async (item: HubModelItem) => {
-    if (!confirm(`确定要在 76 存储服务器后台启动下载【${item.name}】吗？\n将存入 /data/AI_model/${item.name}`)) return
+    if (!confirm('确定要在 76 存储服务器后台启动下载【' + item.name + '】吗？\n将存入 /data/AI_model/' + item.name)) return
     setDownloadingId(item.id)
     try {
       const res = await fetch('/api/v1/hub/start-download', {
@@ -100,7 +102,7 @@ export const ModelHub: React.FC = () => {
       alert(data.message || '已提交下载任务！')
       fetchLocalAssets(true)
     } catch (e: any) {
-      alert(`提交下载失败: ${e.message}`)
+      alert('提交下载失败: ' + e.message)
     } finally {
       setDownloadingId(null)
     }
@@ -109,17 +111,37 @@ export const ModelHub: React.FC = () => {
   const formatSize = (bytes: number) => {
     if (!bytes || bytes <= 0) return '未知大小'
     const gb = bytes / (1024 * 1024 * 1024)
-    if (gb >= 1) return `${gb.toFixed(1)} GB`
+    if (gb >= 1) return gb.toFixed(1) + ' GB'
     const mb = bytes / (1024 * 1024)
-    return `${mb.toFixed(1)} MB`
+    return mb.toFixed(1) + ' MB'
   }
 
   const formatContextLen = (len: number) => {
     if (!len || len <= 0) return ''
-    if (len >= 1048576) return `${(len / 1024 / 1024).toFixed(0)}M 上下文`
-    if (len >= 1024) return `${(len / 1024).toFixed(0)}K 上下文`
-    return `${len} 上下文`
+    if (len >= 1048576) return (len / 1024 / 1024).toFixed(0) + 'M 上下文'
+    if (len >= 1024) return (len / 1024).toFixed(0) + 'K 上下文'
+    return len + ' 上下文'
   }
+
+  const mainAssetsCount = useMemo(() => localAssets.filter((a) => a.type === 'MAIN').length, [localAssets])
+  const archiveAssetsCount = useMemo(() => localAssets.filter((a) => a.type === 'ARCHIVE').length, [localAssets])
+
+  const filteredLocalAssets = useMemo(() => {
+    return localAssets.filter((ast) => {
+      if (localServerFilter === 'MAIN' && ast.type !== 'MAIN') return false
+      if (localServerFilter === 'ARCHIVE' && ast.type !== 'ARCHIVE') return false
+      if (localSearch.trim()) {
+        const s = localSearch.toLowerCase()
+        return (
+          ast.name.toLowerCase().includes(s) ||
+          ast.model_type.toLowerCase().includes(s) ||
+          ast.path.toLowerCase().includes(s) ||
+          (ast.architectures && ast.architectures.some((a) => a.toLowerCase().includes(s)))
+        )
+      }
+      return true
+    })
+  }, [localAssets, localServerFilter, localSearch])
 
   return (
     <div className="space-y-6">
@@ -127,10 +149,11 @@ export const ModelHub: React.FC = () => {
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-sm flex flex-wrap items-center justify-between gap-4">
         <div>
           <h2 className="font-bold text-sm text-slate-100 flex items-center gap-2">
-            <Search className="w-4 h-4 text-indigo-400" /> 模型检索与资产下载中心 (基于 config.json 深度身份凭证)
+            <Search className="w-4 h-4 text-indigo-400" /> 模型检索与存储中心 (76 主力 / test03 历史 · config.json 凭证)
           </h2>
           <p className="text-xs text-slate-400 mt-0.5">
-            穿透两台存储服务器深度子目录，以 <code className="text-indigo-300">config.json</code> 提取真实架构/量化身份，并智能关联 ModelScope 社区
+            毫秒级极速索引 <strong className="text-emerald-400">76 主力服务器</strong> ({mainAssetsCount} 个) 与{' '}
+            <strong className="text-amber-400">test03 历史仓库</strong> ({archiveAssetsCount} 个)，以 <code className="text-indigo-300">config.json</code> 提取真实架构与量化标识
           </p>
         </div>
 
@@ -138,21 +161,17 @@ export const ModelHub: React.FC = () => {
         <div className="flex items-center gap-2 bg-slate-950 p-1 rounded-lg border border-slate-800 text-xs">
           <button
             onClick={() => setActiveTab('search')}
-            className={`px-3 py-1.5 rounded-md font-medium transition flex items-center gap-1.5 ${
-              activeTab === 'search' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'
-            }`}
+            className={'px-3 py-1.5 rounded-md font-medium transition flex items-center gap-1.5 ' + (activeTab === 'search' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200')}
           >
             <Cloud className="w-3.5 h-3.5" />
             <span>全网与官方检索 ({searchResults.length})</span>
           </button>
           <button
             onClick={() => setActiveTab('local')}
-            className={`px-3 py-1.5 rounded-md font-medium transition flex items-center gap-1.5 ${
-              activeTab === 'local' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'
-            }`}
+            className={'px-3 py-1.5 rounded-md font-medium transition flex items-center gap-1.5 ' + (activeTab === 'local' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200')}
           >
-            <HardDrive className="w-3.5 h-3.5" />
-            <span>本地已存深度资产 ({localAssets.length})</span>
+            <Database className="w-3.5 h-3.5" />
+            <span>本地存储已有资产 ({localAssets.length})</span>
           </button>
         </div>
       </div>
@@ -160,20 +179,14 @@ export const ModelHub: React.FC = () => {
       {/* 检索模式 */}
       {activeTab === 'search' && (
         <div className="space-y-4">
-          {/* 搜索栏与组织过滤器 */}
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3">
-            {/* 组织快捷标签 */}
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs text-slate-400 font-medium mr-1">推荐组织:</span>
               {orgOptions.map((org) => (
                 <button
                   key={org.id}
                   onClick={() => setSelectedOrg(org.id)}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-mono transition border ${
-                    selectedOrg === org.id
-                      ? 'bg-indigo-600/20 text-indigo-300 border-indigo-500 font-semibold'
-                      : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
-                  }`}
+                  className={'px-2.5 py-1 rounded-lg text-xs font-mono transition border ' + (selectedOrg === org.id ? 'bg-indigo-600/20 text-indigo-300 border-indigo-500 font-semibold' : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700')}
                   title={org.desc}
                 >
                   {org.name}
@@ -181,7 +194,6 @@ export const ModelHub: React.FC = () => {
               ))}
             </div>
 
-            {/* 搜索表单 */}
             <form onSubmit={handleSearch} className="flex gap-3">
               <div className="relative flex-1">
                 <Search className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
@@ -198,20 +210,18 @@ export const ModelHub: React.FC = () => {
                 disabled={searching}
                 className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 text-white rounded-lg text-xs font-semibold flex items-center gap-2 shadow-sm transition"
               >
-                <RotateCw className={`w-3.5 h-3.5 ${searching ? 'animate-spin' : ''}`} />
+                <RotateCw className={'w-3.5 h-3.5 ' + (searching ? 'animate-spin' : '')} />
                 <span>{searching ? '正在检索...' : '检索 ModelScope'}</span>
               </button>
             </form>
           </div>
 
-          {/* 搜索结果卡片列表 */}
           <div className="grid grid-cols-1 gap-3">
             {searchResults.map((item) => (
               <div
                 key={item.id}
                 className="bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-xl p-4 transition flex flex-col md:flex-row md:items-center justify-between gap-4"
               >
-                {/* 左侧模型信息 */}
                 <div className="space-y-1.5 flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-bold text-slate-100 text-sm">{item.name}</span>
@@ -219,7 +229,6 @@ export const ModelHub: React.FC = () => {
                       {item.id}
                     </span>
 
-                    {/* 状态徽章 (与本地资产比对) */}
                     {item.local_status === 'LOCAL_76' && (
                       <span className="text-[11px] px-2 py-0.5 rounded font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center gap-1 font-semibold">
                         <CheckCircle2 className="w-3 h-3" /> 76 主力已就绪
@@ -236,7 +245,6 @@ export const ModelHub: React.FC = () => {
                       </span>
                     )}
 
-                    {/* 匹配到的 config.json 身份凭证标签 */}
                     {item.local_meta && (
                       <>
                         {item.local_meta.architectures?.[0] && (
@@ -249,32 +257,25 @@ export const ModelHub: React.FC = () => {
                             {item.local_meta.quant_method}
                           </span>
                         )}
-                        {item.local_meta.max_position > 0 && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">
-                            {formatContextLen(item.local_meta.max_position)}
-                          </span>
-                        )}
                       </>
                     )}
                   </div>
 
                   <div className="text-xs text-slate-400 flex items-center gap-4 font-mono">
                     <span>下载量: <strong className="text-slate-200">{item.downloads.toLocaleString()}</strong></span>
-                    <span>文件大小: <strong className="text-indigo-300">{formatSize(item.file_size)}</strong></span>
+                    <span>云端大小: <strong className="text-indigo-300">{formatSize(item.file_size)}</strong></span>
                     <span>更新时间: {item.updated_at ? item.updated_at.substring(0, 10) : '近期'}</span>
                   </div>
 
-                  {/* 路径或命令预览 */}
                   <div className="text-[11px] font-mono bg-slate-950 p-2 rounded text-slate-400 truncate">
                     {item.local_status === 'LOCAL_76' ? (
-                      <span className="text-emerald-400 font-semibold">本地绝对路径: {item.local_path}</span>
+                      <span className="text-emerald-400 font-semibold">76 路径: {item.local_path}</span>
                     ) : (
                       <span className="text-slate-400">{item.download_cmd}</span>
                     )}
                   </div>
                 </div>
 
-                {/* 右侧快捷操作按钮 */}
                 <div className="flex items-center gap-2 shrink-0">
                   {item.local_status === 'LOCAL_76' ? (
                     <button
@@ -300,14 +301,14 @@ export const ModelHub: React.FC = () => {
                         disabled={downloadingId === item.id}
                         className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-sm transition"
                       >
-                        <Download className={`w-3.5 h-3.5 ${downloadingId === item.id ? 'animate-spin' : ''}`} />
+                        <Download className={'w-3.5 h-3.5 ' + (downloadingId === item.id ? 'animate-spin' : '')} />
                         <span>一键在 76 下载</span>
                       </button>
                     </>
                   )}
 
                   <a
-                    href={`https://modelscope.cn/models/${item.id}`}
+                    href={'https://modelscope.cn/models/' + item.id}
                     target="_blank"
                     rel="noreferrer"
                     className="p-1.5 text-slate-400 hover:text-slate-200 rounded bg-slate-950 border border-slate-800"
@@ -322,46 +323,75 @@ export const ModelHub: React.FC = () => {
         </div>
       )}
 
-      {/* 本地深度存储资产一览模式 (基于 config.json 凭证) */}
+      {/* 本地存储资产一览模式 */}
       {activeTab === 'local' && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-slate-400 font-mono">
-              穿透两台服务器深度递归检索到的 <strong>{localAssets.length}</strong> 个真实大模型身份凭证
-            </span>
-            <button
-              onClick={() => fetchLocalAssets(true)}
-              className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-xs flex items-center gap-1.5 border border-slate-700"
-            >
-              <RotateCw className={`w-3.5 h-3.5 ${loadingLocal ? 'animate-spin' : ''}`} />
-              <span>深度重新扫描 config.json</span>
-            </button>
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-2 bg-slate-950 p-1 rounded-lg border border-slate-800 text-xs">
+              <button
+                onClick={() => setLocalServerFilter('ALL')}
+                className={'px-3 py-1.5 rounded-md font-medium transition flex items-center gap-1.5 ' + (localServerFilter === 'ALL' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200')}
+              >
+                <span>全部已存模型 ({localAssets.length})</span>
+              </button>
+              <button
+                onClick={() => setLocalServerFilter('MAIN')}
+                className={'px-3 py-1.5 rounded-md font-medium transition flex items-center gap-1.5 ' + (localServerFilter === 'MAIN' ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200')}
+              >
+                <Server className="w-3.5 h-3.5" />
+                <span>76 主力存储 ({mainAssetsCount})</span>
+              </button>
+              <button
+                onClick={() => setLocalServerFilter('ARCHIVE')}
+                className={'px-3 py-1.5 rounded-md font-medium transition flex items-center gap-1.5 ' + (localServerFilter === 'ARCHIVE' ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200')}
+              >
+                <HardDrive className="w-3.5 h-3.5" />
+                <span>test03 历史仓库 ({archiveAssetsCount})</span>
+              </button>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-2.5" />
+                <input
+                  type="text"
+                  value={localSearch}
+                  onChange={(e) => setLocalSearch(e.target.value)}
+                  placeholder="过滤模型名称/架构..."
+                  className="bg-slate-950 border border-slate-800 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 font-mono w-48"
+                />
+              </div>
+
+              <button
+                onClick={() => fetchLocalAssets(true)}
+                disabled={loadingLocal}
+                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs flex items-center gap-1.5 border border-slate-700 transition"
+              >
+                <RotateCw className={'w-3.5 h-3.5 ' + (loadingLocal ? 'animate-spin' : '')} />
+                <span>{loadingLocal ? '正在扫描...' : '刷新列表'}</span>
+              </button>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {localAssets.map((ast, idx) => (
+            {filteredLocalAssets.map((ast, idx) => (
               <div
                 key={idx}
-                className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-2.5 flex flex-col justify-between hover:border-slate-700 transition"
+                className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3 flex flex-col justify-between hover:border-slate-700 transition"
               >
                 <div>
-                  <div className="flex items-start justify-between gap-2 mb-1.5">
-                    <h4 className="font-bold text-slate-100 text-xs font-mono break-all">{ast.name}</h4>
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <h4 className="font-bold text-slate-100 text-xs font-mono break-all leading-tight">{ast.name}</h4>
                     <span
-                      className={`text-[10px] px-1.5 py-0.5 rounded font-mono shrink-0 ${
-                        ast.type === 'MAIN'
-                          ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
-                          : 'bg-amber-500/10 text-amber-400 border border-amber-500/30'
-                      }`}
+                      className={'text-[10px] px-1.5 py-0.5 rounded font-mono shrink-0 ' + (ast.type === 'MAIN' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/10 text-amber-400 border border-amber-500/30')}
                     >
                       {ast.server}
                     </span>
                   </div>
 
-                  {/* 身份凭证条目 */}
-                  <div className="bg-slate-950/80 rounded p-2 text-[11px] font-mono text-slate-400 space-y-1">
+                  <div className="bg-slate-950/90 rounded-lg p-2.5 text-[11px] font-mono text-slate-400 space-y-1.5 border border-slate-800/80">
                     <div className="flex items-center justify-between">
-                      <span className="text-slate-500">模型架构:</span>
+                      <span className="text-slate-500">模型真实架构:</span>
                       <span className="text-indigo-300 font-semibold">{ast.architectures?.[0] || ast.model_type || '通用'}</span>
                     </div>
                     {ast.quant_method !== 'none' && (
@@ -384,7 +414,7 @@ export const ModelHub: React.FC = () => {
                     )}
                   </div>
 
-                  <p className="text-[11px] text-slate-500 font-mono mt-1.5 truncate" title={ast.path}>
+                  <p className="text-[11px] text-slate-500 font-mono mt-2 truncate" title={ast.path}>
                     {ast.path}
                   </p>
                 </div>
@@ -392,11 +422,11 @@ export const ModelHub: React.FC = () => {
                 <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] font-mono text-slate-500">
                   <span>{ast.time}</span>
                   <button
-                    onClick={() => handleCopy(`xssh 192.2.56.76 "rsync -avP --progress ${ast.path}/ 192.2.0.146:/data/model/${ast.name.split('/').pop()}/"`, `loc_${idx}`)}
+                    onClick={() => handleCopy('xssh 192.2.56.76 "rsync -avP --progress ' + ast.path + '/ 192.2.0.146:/data/model/' + ast.name.split('/').pop() + '/"', 'loc_' + idx)}
                     className="text-indigo-400 hover:text-indigo-300 flex items-center gap-1 font-medium"
                   >
-                    {copiedId === `loc_${idx}` ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                    <span>{copiedId === `loc_${idx}` ? '已复制' : '复制分发命令'}</span>
+                    {copiedId === 'loc_' + idx ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                    <span>{copiedId === 'loc_' + idx ? '已复制' : '复制分发命令'}</span>
                   </button>
                 </div>
               </div>
