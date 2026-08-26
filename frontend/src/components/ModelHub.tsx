@@ -50,7 +50,12 @@ interface HubModelItem {
   rsync_cmd: string
 }
 
-export const ModelHub: React.FC = () => {
+interface ModelHubProps {
+  openConfirm?: (opts: any) => void
+  showToast?: (msg: string, type: 'success' | 'error' | 'info') => void
+}
+
+export const ModelHub: React.FC<ModelHubProps> = ({ openConfirm, showToast }) => {
   const [activeTab, setActiveTab] = useState<'search' | 'local'>('search')
   const [localFilter, setLocalFilter] = useState<'ALL' | 'MAIN' | 'ARCHIVE' | 'DUPLICATE'>('ALL')
   const [localSearch, setLocalSearch] = useState('')
@@ -130,23 +135,36 @@ export const ModelHub: React.FC = () => {
   const handleCopy = (text: string, id: string) => {
     navigator.clipboard.writeText(text)
     setCopiedId(id)
+    if (showToast) showToast('已复制命令到剪贴板', 'success')
     setTimeout(() => setCopiedId(null), 2500)
   }
 
-  const handleStartDownload = async (item: HubModelItem) => {
-    if (!confirm('确定要在 76 存储后台下载【' + item.name + '】吗？\n目标路径: /data/AI_model/' + item.name)) return
-    setDownloadingId(item.id)
-    try {
-      await fetch('/api/v1/hub/start-download', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model_id: item.id, local_dir: item.name })
+  const handleStartDownload = (item: HubModelItem) => {
+    if (openConfirm) {
+      openConfirm({
+        title: '76 存储服务器后台下载确认',
+        message: '确定要在 76 主力存储服务器后台拉取【' + item.name + '】大模型权重吗？',
+        detail: 'ModelScope 模型 ID: ' + item.id + ' · 存储落盘路径: /data/AI_model/' + item.name,
+        confirmText: '确认下载',
+        type: 'primary',
+        onConfirm: async () => {
+          setDownloadingId(item.id)
+          if (showToast) showToast('已向 76 存储服务器下发下载任务...', 'info')
+          try {
+            await fetch('/api/v1/hub/start-download', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ model_id: item.id, local_dir: item.name })
+            })
+            if (showToast) showToast('下载进程已在 76 后台启动', 'success')
+            fetchLocalAssets(true)
+          } catch (e: any) {
+            if (showToast) showToast('下载提交失败: ' + e.message, 'error')
+          } finally {
+            setDownloadingId(null)
+          }
+        }
       })
-      fetchLocalAssets(true)
-    } catch (e: any) {
-      console.error('提交失败:', e)
-    } finally {
-      setDownloadingId(null)
     }
   }
 

@@ -12,6 +12,8 @@ interface NavbarProps {
   onRunMCCL: () => void
   onCheckEnv: () => void
   onAddHost: (host: HostConfig) => void
+  openConfirm?: (opts: any) => void
+  showToast?: (msg: string, type: 'success' | 'error' | 'info') => void
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -23,7 +25,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   onRefresh,
   onRunMCCL,
   onCheckEnv,
-  onAddHost
+  onAddHost,
+  openConfirm,
+  showToast
 }) => {
   const [showAddModal, setShowAddModal] = useState(false)
   const [newHost, setNewHost] = useState<Partial<HostConfig>>({
@@ -38,9 +42,37 @@ export const Navbar: React.FC<NavbarProps> = ({
   const handleAddSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!newHost.id || !newHost.ssh_alias) return
-    onAddHost(newHost as HostConfig)
+    onAddHost({
+      id: newHost.id,
+      name: newHost.name || newHost.id,
+      ssh_alias: newHost.ssh_alias,
+      workspace: newHost.workspace || '/home/workspace',
+      gpu_type: newHost.gpu_type || 'metax',
+      api_port: newHost.api_port || 8000,
+      is_default: false
+    })
     setShowAddModal(false)
-    setNewHost({ id: '', name: '', ssh_alias: '', workspace: '/home/workspace', gpu_type: 'metax', api_port: 8000 })
+  }
+
+  const handleFixAutoUpgrade = () => {
+    if (openConfirm) {
+      openConfirm({
+        title: '系统自动更新关闭确认',
+        message: '确定要关闭服务器自动更新配置（20auto-upgrades & 10periodic）并禁用后台无人值守更新服务吗？',
+        detail: '目标主机: ' + (currentHost?.name || '') + ' (' + (currentHost?.ssh_alias || '') + ') · 彻底杜绝内核自动升级破坏 GPU 驱动',
+        confirmText: '确认关闭',
+        type: 'warning',
+        onConfirm: async () => {
+          try {
+            await fetch('/api/v1/env/fix-auto-upgrade', { method: 'POST' })
+            onCheckEnv()
+            if (showToast) showToast('已成功关闭自动更新，GPU 环境已处于稳态', 'success')
+          } catch (e: any) {
+            if (showToast) showToast('修复失败: ' + e.message, 'error')
+          }
+        }
+      })
+    }
   }
 
   return (
@@ -101,15 +133,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {envStatus?.auto_upgrade === 'ON' ? (
           <button
-            onClick={async () => {
-              if (!confirm('确认关闭系统自动更新配置（20auto-upgrades & 10periodic）？')) return
-              try {
-                await fetch('/api/v1/env/fix-auto-upgrade', { method: 'POST' })
-                onCheckEnv()
-              } catch (e: any) {
-                console.error('修复失败:', e)
-              }
-            }}
+            onClick={handleFixAutoUpgrade}
             className="ml-1 px-2 py-0.5 bg-rose-600/20 text-rose-300 border border-rose-500/40 rounded text-xs hover:bg-rose-600/30 font-medium"
           >
             一键关闭

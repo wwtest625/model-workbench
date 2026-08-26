@@ -9,13 +9,15 @@ interface ModelManagerProps {
   operatingModel: boolean
   onStartModel: (model: ModelCard) => void
   onStopAll: () => void
+  showToast?: (msg: string, type: 'success' | 'error' | 'info') => void
 }
 
 export const ModelManager: React.FC<ModelManagerProps> = ({
   models,
   operatingModel,
   onStartModel,
-  onStopAll
+  onStopAll,
+  showToast
 }) => {
   const [modal, setModal] = useState<ModalState>({
     show: false,
@@ -40,7 +42,7 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
     try {
       const res = await fetch(`/api/v1/models/script?name=${encodeURIComponent(m.script)}`)
       const data = await res.json()
-      setModal(prev => ({ ...prev, content: data.content, loading: false }))
+      setModal(prev => ({ ...prev, content: data.content || '(空文件)', loading: false }))
     } catch (e: any) {
       setModal(prev => ({ ...prev, content: `读取失败: ${e.message}`, loading: false }))
     }
@@ -59,12 +61,14 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
       })
       if (res.ok) {
         setModal(prev => ({ ...prev, content: newCode }))
+        if (showToast) showToast(`脚本 ${activeModel.script} 保存成功`, 'success')
         return true
       } else {
+        if (showToast) showToast('脚本保存失败', 'error')
         return false
       }
     } catch (e: any) {
-      console.error('保存失败:', e)
+      if (showToast) showToast(`保存失败: ${e.message}`, 'error')
       return false
     }
   }
@@ -114,6 +118,7 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
 
   const handleCopy = () => {
     navigator.clipboard.writeText(modal.content)
+    if (showToast) showToast('已复制到剪贴板', 'success')
   }
 
   return (
