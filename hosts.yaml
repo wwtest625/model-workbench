@@ -49,14 +49,14 @@ hosts:
         script: "start_vllm_glm_4_32b_fp8.sh"
         image: "cr.metax-tech.com/public-ai-release/maca/modelzoo.llm.vllm:1.0.3-maca.ai3.7.0.107-torch2.8-py310-ubuntu22.04-amd64"
   - id: "hygon-55"
-    name: "55 · 海光 8卡 DCU-3G (bw1100)"
+    name: "55 · 海光深算三号 8卡 (bw1100)"
     ssh_alias: "192.7.9.55"
     workspace: "/root/workspace"
     gpu_type: "hygon"
     api_port: 8000
     is_default: false
     models:
-      - name: "GLM5-vLLM (DTK 26.04)"
+      - name: "GLM5-vLLM (深算三号)"
         service_name: "GLM5-vllm_0.18.0"
         container_name: "GLM5-vllm_0.18.0"
         engine: "vLLM"
