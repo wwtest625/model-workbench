@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react'
-import { Search, Download, Copy, Check, HardDrive, Cloud, Server, CheckCircle2, RotateCw, ExternalLink, Database } from 'lucide-react'
+import { Search, Download, Copy, Check, HardDrive, Cloud, Server, CheckCircle2, RotateCw, ExternalLink, Database, ArrowRight } from 'lucide-react'
 
 interface LocalAsset {
   name: string
@@ -152,8 +152,8 @@ export const ModelHub: React.FC = () => {
             <Search className="w-4 h-4 text-indigo-400" /> 模型检索与存储中心 (76 主力 / test03 历史 · config.json 凭证)
           </h2>
           <p className="text-xs text-slate-400 mt-0.5">
-            毫秒级极速索引 <strong className="text-emerald-400">76 主力服务器</strong> ({mainAssetsCount} 个) 与{' '}
-            <strong className="text-amber-400">test03 历史仓库</strong> ({archiveAssetsCount} 个)，以 <code className="text-indigo-300">config.json</code> 提取真实架构与量化标识
+            <strong className="text-emerald-400">76 主力服务器</strong> ({mainAssetsCount} 个) 与{' '}
+            <strong className="text-amber-400">test03 历史仓库</strong> ({archiveAssetsCount} 个) · 已存模型直接从源机分发至 146，避免重复在 76 下载
           </p>
         </div>
 
@@ -231,12 +231,12 @@ export const ModelHub: React.FC = () => {
 
                     {item.local_status === 'LOCAL_76' && (
                       <span className="text-[11px] px-2 py-0.5 rounded font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center gap-1 font-semibold">
-                        <CheckCircle2 className="w-3 h-3" /> 76 主力已就绪
+                        <CheckCircle2 className="w-3 h-3" /> 76 主力已就绪 (无需下载)
                       </span>
                     )}
                     {item.local_status === 'LOCAL_TEST03' && (
                       <span className="text-[11px] px-2 py-0.5 rounded font-mono bg-amber-500/10 text-amber-400 border border-amber-500/30 flex items-center gap-1 font-semibold">
-                        <HardDrive className="w-3 h-3" /> test03 历史已存档
+                        <HardDrive className="w-3 h-3" /> test03 历史已存档 (直接分发，无需下载)
                       </span>
                     )}
                     {item.local_status === 'CLOUD_ONLY' && (
@@ -269,7 +269,9 @@ export const ModelHub: React.FC = () => {
 
                   <div className="text-[11px] font-mono bg-slate-950 p-2 rounded text-slate-400 truncate">
                     {item.local_status === 'LOCAL_76' ? (
-                      <span className="text-emerald-400 font-semibold">76 路径: {item.local_path}</span>
+                      <span className="text-emerald-400 font-semibold">76 绝对路径: {item.local_path}</span>
+                    ) : item.local_status === 'LOCAL_TEST03' ? (
+                      <span className="text-amber-400 font-semibold">test03 归档路径: {item.local_path} (建议直接分发)</span>
                     ) : (
                       <span className="text-slate-400">{item.download_cmd}</span>
                     )}
@@ -280,11 +282,20 @@ export const ModelHub: React.FC = () => {
                   {item.local_status === 'LOCAL_76' ? (
                     <button
                       onClick={() => handleCopy(item.rsync_cmd, item.id + '_rsync')}
-                      className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-medium flex items-center gap-1.5 border border-slate-700 transition"
-                      title="复制分发到算力机 146 的 rsync 命令"
+                      className="px-3.5 py-1.5 bg-emerald-700/80 hover:bg-emerald-600 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-sm transition"
+                      title="从 76 主力存储直接 rsync 到算力机 146"
                     >
-                      {copiedId === item.id + '_rsync' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                      <span>{copiedId === item.id + '_rsync' ? '已复制分发命令' : '复制分发至146命令'}</span>
+                      {copiedId === item.id + '_rsync' ? <Check className="w-3.5 h-3.5 text-white" /> : <Copy className="w-3.5 h-3.5" />}
+                      <span>{copiedId === item.id + '_rsync' ? '已复制分发命令' : '复制从 76 分发至 146'}</span>
+                    </button>
+                  ) : item.local_status === 'LOCAL_TEST03' ? (
+                    <button
+                      onClick={() => handleCopy(item.rsync_cmd, item.id + '_rsync')}
+                      className="px-3.5 py-1.5 bg-amber-600/80 hover:bg-amber-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-sm transition"
+                      title="从 test03 历史仓库直接 rsync 到算力机 146，免去重复下载"
+                    >
+                      {copiedId === item.id + '_rsync' ? <Check className="w-3.5 h-3.5 text-white" /> : <Copy className="w-3.5 h-3.5" />}
+                      <span>{copiedId === item.id + '_rsync' ? '已复制分发命令' : '复制从 test03 分发至 146'}</span>
                     </button>
                   ) : (
                     <>
@@ -374,63 +385,67 @@ export const ModelHub: React.FC = () => {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {filteredLocalAssets.map((ast, idx) => (
-              <div
-                key={idx}
-                className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3 flex flex-col justify-between hover:border-slate-700 transition"
-              >
-                <div>
-                  <div className="flex items-start justify-between gap-2 mb-2">
-                    <h4 className="font-bold text-slate-100 text-xs font-mono break-all leading-tight">{ast.name}</h4>
-                    <span
-                      className={'text-[10px] px-1.5 py-0.5 rounded font-mono shrink-0 ' + (ast.type === 'MAIN' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/10 text-amber-400 border border-amber-500/30')}
-                    >
-                      {ast.server}
-                    </span>
-                  </div>
-
-                  <div className="bg-slate-950/90 rounded-lg p-2.5 text-[11px] font-mono text-slate-400 space-y-1.5 border border-slate-800/80">
-                    <div className="flex items-center justify-between">
-                      <span className="text-slate-500">模型真实架构:</span>
-                      <span className="text-indigo-300 font-semibold">{ast.architectures?.[0] || ast.model_type || '通用'}</span>
+            {filteredLocalAssets.map((ast, idx) => {
+              const rsyncFrom = ast.server_ip === '192.2.56.76' ? '192.2.56.76' : '192.2.29.9';
+              const rsyncCmd = 'xssh ' + rsyncFrom + ' "rsync -avP --progress ' + ast.path + '/ 192.2.0.146:/data/model/' + ast.name.split('/').pop() + '/"';
+              return (
+                <div
+                  key={idx}
+                  className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3 flex flex-col justify-between hover:border-slate-700 transition"
+                >
+                  <div>
+                    <div className="flex items-start justify-between gap-2 mb-2">
+                      <h4 className="font-bold text-slate-100 text-xs font-mono break-all leading-tight">{ast.name}</h4>
+                      <span
+                        className={'text-[10px] px-1.5 py-0.5 rounded font-mono shrink-0 ' + (ast.type === 'MAIN' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/10 text-amber-400 border border-amber-500/30')}
+                      >
+                        {ast.server}
+                      </span>
                     </div>
-                    {ast.quant_method !== 'none' && (
+
+                    <div className="bg-slate-950/90 rounded-lg p-2.5 text-[11px] font-mono text-slate-400 space-y-1.5 border border-slate-800/80">
                       <div className="flex items-center justify-between">
-                        <span className="text-slate-500">量化方式:</span>
-                        <span className="text-purple-300 font-semibold">{ast.quant_method}</span>
+                        <span className="text-slate-500">模型真实架构:</span>
+                        <span className="text-indigo-300 font-semibold">{ast.architectures?.[0] || ast.model_type || '通用'}</span>
                       </div>
-                    )}
-                    {ast.torch_dtype && (
-                      <div className="flex items-center justify-between">
-                        <span className="text-slate-500">权重精度:</span>
-                        <span className="text-slate-300">{ast.torch_dtype}</span>
-                      </div>
-                    )}
-                    {ast.max_position > 0 && (
-                      <div className="flex items-center justify-between">
-                        <span className="text-slate-500">上下文上限:</span>
-                        <span className="text-cyan-400">{formatContextLen(ast.max_position)}</span>
-                      </div>
-                    )}
+                      {ast.quant_method !== 'none' && (
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-500">量化方式:</span>
+                          <span className="text-purple-300 font-semibold">{ast.quant_method}</span>
+                        </div>
+                      )}
+                      {ast.torch_dtype && (
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-500">权重精度:</span>
+                          <span className="text-slate-300">{ast.torch_dtype}</span>
+                        </div>
+                      )}
+                      {ast.max_position > 0 && (
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-500">上下文上限:</span>
+                          <span className="text-cyan-400">{formatContextLen(ast.max_position)}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <p className="text-[11px] text-slate-500 font-mono mt-2 truncate" title={ast.path}>
+                      {ast.path}
+                    </p>
                   </div>
 
-                  <p className="text-[11px] text-slate-500 font-mono mt-2 truncate" title={ast.path}>
-                    {ast.path}
-                  </p>
+                  <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] font-mono text-slate-500">
+                    <span>{ast.time}</span>
+                    <button
+                      onClick={() => handleCopy(rsyncCmd, 'loc_' + idx)}
+                      className="text-indigo-400 hover:text-indigo-300 flex items-center gap-1 font-medium"
+                    >
+                      {copiedId === 'loc_' + idx ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                      <span>{copiedId === 'loc_' + idx ? '已复制' : '复制分发命令'}</span>
+                    </button>
+                  </div>
                 </div>
-
-                <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] font-mono text-slate-500">
-                  <span>{ast.time}</span>
-                  <button
-                    onClick={() => handleCopy('xssh 192.2.56.76 "rsync -avP --progress ' + ast.path + '/ 192.2.0.146:/data/model/' + ast.name.split('/').pop() + '/"', 'loc_' + idx)}
-                    className="text-indigo-400 hover:text-indigo-300 flex items-center gap-1 font-medium"
-                  >
-                    {copiedId === 'loc_' + idx ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                    <span>{copiedId === 'loc_' + idx ? '已复制' : '复制分发命令'}</span>
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

@@ -55,7 +55,7 @@ func GetHubManager() *HubManager {
 	return defaultHubManager
 }
 
-// scanServerDeepByConfigJson 毫秒级极速扫描 config.json 提取模型身份凭证（不统计文件大小以保证瞬时响应）
+// scanServerDeepByConfigJson 毫秒级极速扫描 config.json 提取模型身份凭证
 func scanServerDeepByConfigJson(serverIP string, rootPath string, serverLabel string, sType string) []LocalModelAsset {
 	sh := fmt.Sprintf(`
 python3 -c '
@@ -159,11 +159,11 @@ func (h *HubManager) ScanLocalAssets(force bool) ([]LocalModelAsset, error) {
 
 	var assets []LocalModelAsset
 
-	// 1. 毫秒级扫描 76 主力服务器 (/data/AI_model/)
+	// 1. 扫描 76 主力服务器 (/data/AI_model/)
 	list76 := scanServerDeepByConfigJson("192.2.56.76", "/data/AI_model", "76 (主力存储)", "MAIN")
 	assets = append(assets, list76...)
 
-	// 2. 毫秒级扫描 test03 历史仓库 (/HDD_Raid/SVN_MODEL_REPO/Model/)
+	// 2. 扫描 test03 历史仓库 (/HDD_Raid/SVN_MODEL_REPO/Model/)
 	list29 := scanServerDeepByConfigJson("192.2.29.9", "/HDD_Raid/SVN_MODEL_REPO/Model", "test03 (历史仓库)", "ARCHIVE")
 	assets = append(assets, list29...)
 
@@ -181,7 +181,7 @@ func normalizeName(s string) string {
 	return s
 }
 
-// SearchModelScope 远程查询 ModelScope 社区并与本地深度资产进行身份凭证匹配
+// SearchModelScope 远程查询 ModelScope 并智能关联本地存储状态
 func (h *HubManager) SearchModelScope(query string, org string, pageSize int) ([]HubModelItem, error) {
 	if pageSize <= 0 {
 		pageSize = 25
@@ -253,7 +253,13 @@ except Exception as e:
 
 		cleanLocalDir := name
 		downloadCmd := fmt.Sprintf(`xssh 192.2.56.76 "cd /data/AI_model && modelscope download --model %s --local_dir %s"`, id, cleanLocalDir)
-		rsyncCmd := fmt.Sprintf(`xssh 192.2.56.76 "rsync -avP --progress /data/AI_model/%s/ 192.2.0.146:/data/model/%s/"`, cleanLocalDir, cleanLocalDir)
+		
+		rsyncCmd := ""
+		if localStatus == "LOCAL_76" {
+			rsyncCmd = fmt.Sprintf(`xssh 192.2.56.76 "rsync -avP --progress %s/ 192.2.0.146:/data/model/%s/"`, localPath, cleanLocalDir)
+		} else if localStatus == "LOCAL_TEST03" {
+			rsyncCmd = fmt.Sprintf(`xssh 192.2.29.9 "rsync -avP --progress %s/ 192.2.0.146:/data/model/%s/"`, localPath, cleanLocalDir)
+		}
 
 		items = append(items, HubModelItem{
 			ID:          id,
