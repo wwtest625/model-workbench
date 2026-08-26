@@ -125,22 +125,21 @@ export default function App() {
       fetchHosts()
     } catch (e: any) {
       alert(`添加失败: ${e.message}`)
+      console.error('添加失败:', e)
     }
   }
 
   const handleStartModel = async (m: ModelCard) => {
     setOperatingModel(true)
     try {
-      const res = await fetch('/api/v1/models/start', {
+      await fetch('/api/v1/models/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: m.name, script: m.script })
+        body: JSON.stringify({ name: m.name, script: m.service_name || m.name })
       })
-      const data = await res.json()
-      alert(data.message)
       setTimeout(fetchModels, 2000)
     } catch (e: any) {
-      alert(`启动失败: ${e.message}`)
+      console.error('启动失败:', e)
     } finally {
       setOperatingModel(false)
     }
@@ -149,12 +148,10 @@ export default function App() {
   const handleStopAll = async () => {
     if (!confirm('确定要停止当前主机上所有运行中的推理服务吗？')) return
     try {
-      const res = await fetch('/api/v1/models/stop', { method: 'POST' })
-      const data = await res.json()
-      alert(data.message)
+      await fetch('/api/v1/models/stop', { method: 'POST' })
       setTimeout(fetchModels, 1500)
     } catch (e: any) {
-      alert(`停止失败: ${e.message}`)
+      console.error('停止失败:', e)
     }
   }
 
@@ -177,9 +174,8 @@ export default function App() {
       } catch (e) {}
     }
     es.onerror = () => {
-      setConsoleLogs((prev) => [...prev, '[通信提示] 压测后台任务已提交'])
-      es.close()
       setBenchRunning(false)
+      es.close()
     }
   }
 

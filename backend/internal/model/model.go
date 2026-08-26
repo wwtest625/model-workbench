@@ -279,7 +279,12 @@ func (m *ModelManager) StartModel(serviceName string) error {
 	if err != nil {
 		return err
 	}
-	cmd := fmt.Sprintf("cd %s && docker compose -f docker-compose-models.yml up -d %s", h.Workspace, serviceName)
+	// 1. 确保所有脚本换行符规范为 Linux LF
+	// 2. 停止旧容器并拉起新容器
+	cmd := fmt.Sprintf(`
+sed -i 's/\r$//' %s/*.sh 2>/dev/null || true
+cd %s && docker compose -f docker-compose-models.yml up -d --force-recreate %s
+`, h.Workspace, h.Workspace, serviceName)
 	_, err = runner.RunCmd(h.SSHAlias, cmd, 25)
 	return err
 }
@@ -294,19 +299,20 @@ func (m *ModelManager) StopAllModels() error {
 	return err
 }
 
-
 func (m *ModelManager) SaveScriptContent(scriptName string, newContent string) error {
 	h, err := host.GetHostManager().GetCurrentHost()
 	if err != nil {
 		return err
 	}
 	clean := filepath.Base(scriptName)
-	// 使用 base64 安全写入远程文件（不生成备份）
-	b64 := base64.StdEncoding.EncodeToString([]byte(newContent))
+	// 规范化换行，去掉 Windows \r
+	normalized := strings.ReplaceAll(newContent, "\r\n", "\n")
+	b64 := base64.StdEncoding.EncodeToString([]byte(normalized))
 	sh := fmt.Sprintf(`
 echo "%s" | base64 -d > %s/%s
+sed -i 's/\r$//' %s/%s 2>/dev/null || true
 chmod +x %s/%s
-`, b64, h.Workspace, clean, h.Workspace, clean)
+`, b64, h.Workspace, clean, h.Workspace, clean, h.Workspace, clean)
 
 	_, err = runner.RunCmd(h.SSHAlias, sh, 15)
 	return err

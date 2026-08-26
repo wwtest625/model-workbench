@@ -57,17 +57,14 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
           content: newCode
         })
       })
-      const data = await res.json()
       if (res.ok) {
         setModal(prev => ({ ...prev, content: newCode }))
-        alert(data.message || '保存成功！')
         return true
       } else {
-        alert(`保存失败: ${data.error || '未知错误'}`)
         return false
       }
     } catch (e: any) {
-      alert(`保存失败: ${e.message}`)
+      console.error('保存失败:', e)
       return false
     }
   }
@@ -117,7 +114,6 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
 
   const handleCopy = () => {
     navigator.clipboard.writeText(modal.content)
-    alert('已复制到剪贴板！')
   }
 
   return (

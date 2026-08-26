@@ -137,16 +137,14 @@ export const ModelHub: React.FC = () => {
     if (!confirm('确定要在 76 存储后台下载【' + item.name + '】吗？\n目标路径: /data/AI_model/' + item.name)) return
     setDownloadingId(item.id)
     try {
-      const res = await fetch('/api/v1/hub/start-download', {
+      await fetch('/api/v1/hub/start-download', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model_id: item.id, local_dir: item.name })
       })
-      const data = await res.json()
-      alert(data.message || '下载任务已提交')
       fetchLocalAssets(true)
     } catch (e: any) {
-      alert('提交失败: ' + e.message)
+      console.error('提交失败:', e)
     } finally {
       setDownloadingId(null)
     }

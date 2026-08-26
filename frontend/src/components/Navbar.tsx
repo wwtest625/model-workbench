@@ -104,12 +104,10 @@ export const Navbar: React.FC<NavbarProps> = ({
             onClick={async () => {
               if (!confirm('确认关闭系统自动更新配置（20auto-upgrades & 10periodic）？')) return
               try {
-                const res = await fetch('/api/v1/env/fix-auto-upgrade', { method: 'POST' })
-                const data = await res.json()
-                alert(data.message || '已成功关闭自动更新！')
+                await fetch('/api/v1/env/fix-auto-upgrade', { method: 'POST' })
                 onCheckEnv()
               } catch (e: any) {
-                alert(`修复失败: ${e.message}`)
+                console.error('修复失败:', e)
               }
             }}
             className="ml-1 px-2 py-0.5 bg-rose-600/20 text-rose-300 border border-rose-500/40 rounded text-xs hover:bg-rose-600/30 font-medium"
