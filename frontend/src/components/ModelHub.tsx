@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
-import { Search, Download, Copy, Check, HardDrive, Cloud, Server, CheckCircle2, RotateCw, ExternalLink, Database } from 'lucide-react'
+import { Search, Download, Copy, Check, HardDrive, Cloud, Server, CheckCircle2, RotateCw, ExternalLink, Database, AlertTriangle } from 'lucide-react'
 
 interface LocalAsset {
   name: string
@@ -13,6 +13,26 @@ interface LocalAsset {
   max_position: number
   time: string
   type: 'MAIN' | 'ARCHIVE'
+}
+
+interface AggregatedModelAsset {
+  key: string
+  name: string
+  locations: {
+    server: string
+    server_ip: string
+    path: string
+    type: 'MAIN' | 'ARCHIVE'
+    time: string
+  }[]
+  hasMain: boolean
+  hasArchive: boolean
+  isDuplicate: boolean
+  model_type: string
+  architectures: string[]
+  torch_dtype: string
+  quant_method: string
+  max_position: number
 }
 
 interface HubModelItem {
@@ -32,14 +52,13 @@ interface HubModelItem {
 
 export const ModelHub: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'search' | 'local'>('search')
-  const [localServerFilter, setLocalServerFilter] = useState<'ALL' | 'MAIN' | 'ARCHIVE'>('ALL')
+  const [localFilter, setLocalFilter] = useState<'ALL' | 'MAIN' | 'ARCHIVE' | 'DUPLICATE'>('ALL')
   const [localSearch, setLocalSearch] = useState('')
   const [query, setQuery] = useState('')
   const [selectedOrg, setSelectedOrg] = useState('metax-tech')
   const [searching, setSearching] = useState(false)
   const [loadingLocal, setLoadingLocal] = useState(false)
   
-  // 缓存池 (避免切换 Tab 重复触发请求)
   const [localAssets, setLocalAssets] = useState<LocalAsset[]>([])
   const [searchResults, setSearchResults] = useState<HubModelItem[]>([])
   const [copiedId, setCopiedId] = useState<string | null>(null)
@@ -56,7 +75,6 @@ export const ModelHub: React.FC = () => {
     { id: 'MiniMax', name: 'MiniMax (名之梦)', desc: 'MiniMax 官方' },
   ]
 
-  // 1. 懒加载：仅在切换组织时检查缓存，有缓存直接读缓存，无缓存才请求
   useEffect(() => {
     if (!query && orgCacheRef.current[selectedOrg]) {
       setSearchResults(orgCacheRef.current[selectedOrg])
@@ -65,7 +83,6 @@ export const ModelHub: React.FC = () => {
     }
   }, [selectedOrg])
 
-  // 2. 懒加载：当用户真正点击「本地存储已有资产」Tab 时才触发首次拉取
   useEffect(() => {
     if (activeTab === 'local' && !localLoadedRef.current) {
       fetchLocalAssets(false)
@@ -89,8 +106,6 @@ export const ModelHub: React.FC = () => {
 
   const handleSearch = async (e?: React.FormEvent, force: boolean = true) => {
     if (e) e.preventDefault()
-    
-    // 如果无 query 且有组织缓存且非强制刷新，直接使用缓存
     if (!force && !query && orgCacheRef.current[selectedOrg]) {
       setSearchResults(orgCacheRef.current[selectedOrg])
       return
@@ -152,36 +167,98 @@ export const ModelHub: React.FC = () => {
     return len + ' 上下文'
   }
 
-  const mainAssetsCount = useMemo(() => localAssets.filter((a) => a.type === 'MAIN').length, [localAssets])
-  const archiveAssetsCount = useMemo(() => localAssets.filter((a) => a.type === 'ARCHIVE').length, [localAssets])
+  // 🌟 功能 1：多副本聚合算法 (将 76 和 test03 上的同名模型合并为单个资产条目)
+  const aggregatedAssets = useMemo<AggregatedModelAsset[]>(() => {
+    const map = new Map<string, AggregatedModelAsset>()
 
-  const filteredLocalAssets = useMemo(() => {
-    return localAssets.filter((ast) => {
-      if (localServerFilter === 'MAIN' && ast.type !== 'MAIN') return false
-      if (localServerFilter === 'ARCHIVE' && ast.type !== 'ARCHIVE') return false
+    localAssets.forEach((ast) => {
+      // 提取核心名字做聚合 key (例如 Qwen3.8-27B)
+      const baseName = ast.name.split('/').pop() || ast.name
+      const normKey = baseName.toLowerCase().replace(/[-_.]/g, '')
+
+      if (!map.has(normKey)) {
+        map.set(normKey, {
+          key: normKey,
+          name: baseName,
+          locations: [],
+          hasMain: false,
+          hasArchive: false,
+          isDuplicate: false,
+          model_type: ast.model_type,
+          architectures: ast.architectures || [],
+          torch_dtype: ast.torch_dtype,
+          quant_method: ast.quant_method,
+          max_position: ast.max_position,
+        })
+      }
+
+      const item = map.get(normKey)!
+      item.locations.push({
+        server: ast.server,
+        server_ip: ast.server_ip,
+        path: ast.path,
+        type: ast.type,
+        time: ast.time,
+      })
+
+      if (ast.type === 'MAIN') item.hasMain = true
+      if (ast.type === 'ARCHIVE') item.hasArchive = true
+      if (!item.architectures.length && ast.architectures?.length) item.architectures = ast.architectures
+      if (!item.model_type && ast.model_type) item.model_type = ast.model_type
+      if (item.quant_method === 'none' && ast.quant_method !== 'none') item.quant_method = ast.quant_method
+      if (!item.max_position && ast.max_position) item.max_position = ast.max_position
+    })
+
+    // 标记跨机重复副本
+    map.forEach((item) => {
+      item.isDuplicate = item.hasMain && item.hasArchive
+    })
+
+    return Array.from(map.values())
+  }, [localAssets])
+
+  // 统计信息
+  const duplicateCount = useMemo(() => aggregatedAssets.filter((a) => a.isDuplicate).length, [aggregatedAssets])
+  const mainOnlyCount = useMemo(() => aggregatedAssets.filter((a) => a.hasMain).length, [aggregatedAssets])
+  const archiveOnlyCount = useMemo(() => aggregatedAssets.filter((a) => a.hasArchive).length, [aggregatedAssets])
+
+  // 🌟 功能 3：筛选与关键词过滤 (支持一键筛选「跨机重复副本」)
+  const filteredAggregatedAssets = useMemo(() => {
+    return aggregatedAssets.filter((ast) => {
+      if (localFilter === 'MAIN' && !ast.hasMain) return false
+      if (localFilter === 'ARCHIVE' && !ast.hasArchive) return false
+      if (localFilter === 'DUPLICATE' && !ast.isDuplicate) return false
+
       if (localSearch.trim()) {
         const s = localSearch.toLowerCase()
         return (
           ast.name.toLowerCase().includes(s) ||
           ast.model_type.toLowerCase().includes(s) ||
-          ast.path.toLowerCase().includes(s) ||
+          ast.locations.some((loc) => loc.path.toLowerCase().includes(s)) ||
           (ast.architectures && ast.architectures.some((a) => a.toLowerCase().includes(s)))
         )
       }
       return true
     })
-  }, [localAssets, localServerFilter, localSearch])
+  }, [aggregatedAssets, localFilter, localSearch])
 
   return (
     <div className="space-y-6">
-      {/* 顶部二级导航 */}
+      {/* 顶部二级导航与快捷概览 */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-sm flex flex-wrap items-center justify-between gap-4">
         <div>
           <h2 className="font-bold text-sm text-slate-100 flex items-center gap-2">
-            <Search className="w-4 h-4 text-indigo-400" /> 模型检索与存储中心 (懒加载模式 · 毫秒级秒开)
+            <Search className="w-4 h-4 text-indigo-400" /> 模型检索与存储中心 (多副本智能聚合 · 跨机重复检测)
           </h2>
           <p className="text-xs text-slate-400 mt-0.5">
-            前端与后端双重缓存，按需异步拉取，告别多余的重复网络与 SSH 扫描
+            聚合 <strong className="text-indigo-300">{aggregatedAssets.length}</strong> 个唯一模型资产 ·{' '}
+            <strong className="text-emerald-400">76 主力</strong> ({mainOnlyCount}) ·{' '}
+            <strong className="text-amber-400">test03 历史</strong> ({archiveOnlyCount})
+            {duplicateCount > 0 && (
+              <span className="ml-2 text-amber-300 font-semibold">
+                · ⚠️ 发现 {duplicateCount} 个跨机重复副本
+              </span>
+            )}
           </p>
         </div>
 
@@ -199,7 +276,7 @@ export const ModelHub: React.FC = () => {
             className={'px-3 py-1.5 rounded-md font-medium transition flex items-center gap-1.5 ' + (activeTab === 'local' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200')}
           >
             <Database className="w-3.5 h-3.5" />
-            <span>本地存储已有资产 ({localLoadedRef.current ? localAssets.length : '点击加载'})</span>
+            <span>本地已存模型 ({aggregatedAssets.length})</span>
           </button>
         </div>
       </div>
@@ -259,12 +336,12 @@ export const ModelHub: React.FC = () => {
 
                     {item.local_status === 'LOCAL_76' && (
                       <span className="text-[11px] px-2 py-0.5 rounded font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center gap-1 font-semibold">
-                        <CheckCircle2 className="w-3 h-3" /> 76 主力已就绪
+                        <CheckCircle2 className="w-3 h-3" /> 76 主力已就绪 (无需下载)
                       </span>
                     )}
                     {item.local_status === 'LOCAL_TEST03' && (
                       <span className="text-[11px] px-2 py-0.5 rounded font-mono bg-amber-500/10 text-amber-400 border border-amber-500/30 flex items-center gap-1 font-semibold">
-                        <HardDrive className="w-3 h-3" /> test03 历史已存档
+                        <HardDrive className="w-3 h-3" /> test03 历史已存档 (直接分发，无需下载)
                       </span>
                     )}
                     {item.local_status === 'CLOUD_ONLY' && (
@@ -297,9 +374,9 @@ export const ModelHub: React.FC = () => {
 
                   <div className="text-[11px] font-mono bg-slate-950 p-2 rounded text-slate-400 truncate">
                     {item.local_status === 'LOCAL_76' ? (
-                      <span className="text-emerald-400 font-semibold">76 绝对路径: {item.local_path}</span>
+                      <span className="text-emerald-400 font-semibold">76 路径: {item.local_path}</span>
                     ) : item.local_status === 'LOCAL_TEST03' ? (
-                      <span className="text-amber-400 font-semibold">test03 归档路径: {item.local_path} (建议直接分发)</span>
+                      <span className="text-amber-400 font-semibold">test03 路径: {item.local_path}</span>
                     ) : (
                       <span className="text-slate-400">{item.download_cmd}</span>
                     )}
@@ -311,7 +388,6 @@ export const ModelHub: React.FC = () => {
                     <button
                       onClick={() => handleCopy(item.rsync_cmd, item.id + '_rsync')}
                       className="px-3.5 py-1.5 bg-emerald-700/80 hover:bg-emerald-600 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-sm transition"
-                      title="从 76 主力存储直接 rsync 到算力机 146"
                     >
                       {copiedId === item.id + '_rsync' ? <Check className="w-3.5 h-3.5 text-white" /> : <Copy className="w-3.5 h-3.5" />}
                       <span>{copiedId === item.id + '_rsync' ? '已复制分发命令' : '复制从 76 分发至 146'}</span>
@@ -320,7 +396,6 @@ export const ModelHub: React.FC = () => {
                     <button
                       onClick={() => handleCopy(item.rsync_cmd, item.id + '_rsync')}
                       className="px-3.5 py-1.5 bg-amber-600/80 hover:bg-amber-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-sm transition"
-                      title="从 test03 历史仓库直接 rsync 到算力机 146，免去重复下载"
                     >
                       {copiedId === item.id + '_rsync' ? <Check className="w-3.5 h-3.5 text-white" /> : <Copy className="w-3.5 h-3.5" />}
                       <span>{copiedId === item.id + '_rsync' ? '已复制分发命令' : '复制从 test03 分发至 146'}</span>
@@ -362,30 +437,41 @@ export const ModelHub: React.FC = () => {
         </div>
       )}
 
-      {/* 本地存储资产一览模式 (懒加载) */}
+      {/* 🌟 本地存储资产一览 (多副本聚合 + 跨机重复检测) */}
       {activeTab === 'local' && (
         <div className="space-y-4">
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-wrap items-center justify-between gap-4">
+            {/* 过滤器：支持查看全部、76、test03 以及 跨机重复副本 */}
             <div className="flex items-center gap-2 bg-slate-950 p-1 rounded-lg border border-slate-800 text-xs">
               <button
-                onClick={() => setLocalServerFilter('ALL')}
-                className={'px-3 py-1.5 rounded-md font-medium transition flex items-center gap-1.5 ' + (localServerFilter === 'ALL' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200')}
+                onClick={() => setLocalFilter('ALL')}
+                className={'px-3 py-1.5 rounded-md font-medium transition flex items-center gap-1.5 ' + (localFilter === 'ALL' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200')}
               >
-                <span>全部已存模型 ({localAssets.length})</span>
+                <span>全部聚合模型 ({aggregatedAssets.length})</span>
               </button>
               <button
-                onClick={() => setLocalServerFilter('MAIN')}
-                className={'px-3 py-1.5 rounded-md font-medium transition flex items-center gap-1.5 ' + (localServerFilter === 'MAIN' ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200')}
+                onClick={() => setLocalFilter('MAIN')}
+                className={'px-3 py-1.5 rounded-md font-medium transition flex items-center gap-1.5 ' + (localFilter === 'MAIN' ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200')}
               >
                 <Server className="w-3.5 h-3.5" />
-                <span>76 主力存储 ({mainAssetsCount})</span>
+                <span>在 76 主力 ({mainOnlyCount})</span>
               </button>
               <button
-                onClick={() => setLocalServerFilter('ARCHIVE')}
-                className={'px-3 py-1.5 rounded-md font-medium transition flex items-center gap-1.5 ' + (localServerFilter === 'ARCHIVE' ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200')}
+                onClick={() => setLocalFilter('ARCHIVE')}
+                className={'px-3 py-1.5 rounded-md font-medium transition flex items-center gap-1.5 ' + (localFilter === 'ARCHIVE' ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200')}
               >
                 <HardDrive className="w-3.5 h-3.5" />
-                <span>test03 历史仓库 ({archiveAssetsCount})</span>
+                <span>在 test03 历史 ({archiveOnlyCount})</span>
+              </button>
+              
+              {/* 🌟 功能 3：跨机重复副本筛选器 */}
+              <button
+                onClick={() => setLocalFilter('DUPLICATE')}
+                className={'px-3 py-1.5 rounded-md font-medium transition flex items-center gap-1.5 ' + (localFilter === 'DUPLICATE' ? 'bg-rose-600 text-white shadow-sm font-semibold' : duplicateCount > 0 ? 'bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 border border-rose-500/30' : 'text-slate-500 hover:text-slate-300')}
+                title="查看同时存在于 76 和 test03 产生重复占用的模型"
+              >
+                <AlertTriangle className="w-3.5 h-3.5" />
+                <span>⚠️ 跨机重复副本 ({duplicateCount})</span>
               </button>
             </div>
 
@@ -412,28 +498,47 @@ export const ModelHub: React.FC = () => {
             </div>
           </div>
 
+          {/* 🌟 功能 1：聚合模型资产卡片网格 */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {filteredLocalAssets.map((ast, idx) => {
-              const rsyncFrom = ast.server_ip === '192.2.56.76' ? '192.2.56.76' : '192.2.29.9';
-              const rsyncCmd = 'xssh ' + rsyncFrom + ' "rsync -avP --progress ' + ast.path + '/ 192.2.0.146:/data/model/' + ast.name.split('/').pop() + '/"';
+            {filteredAggregatedAssets.map((ast, idx) => {
+              // 默认优选 76 分发，没有 76 则从 test03 分发
+              const preferredLoc = ast.locations.find((l) => l.type === 'MAIN') || ast.locations[0]
+              const rsyncCmd = 'xssh ' + preferredLoc.server_ip + ' "rsync -avP --progress ' + preferredLoc.path + '/ 192.2.0.146:/data/model/' + ast.name + '/"'
+
               return (
                 <div
                   key={idx}
-                  className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3 flex flex-col justify-between hover:border-slate-700 transition"
+                  className={'bg-slate-900 border rounded-xl p-4 space-y-3 flex flex-col justify-between transition ' + (ast.isDuplicate ? 'border-amber-500/40 bg-amber-950/10 hover:border-amber-500/70' : 'border-slate-800 hover:border-slate-700')}
                 >
                   <div>
+                    {/* 卡片头部与副本状态 */}
                     <div className="flex items-start justify-between gap-2 mb-2">
-                      <h4 className="font-bold text-slate-100 text-xs font-mono break-all leading-tight">{ast.name}</h4>
-                      <span
-                        className={'text-[10px] px-1.5 py-0.5 rounded font-mono shrink-0 ' + (ast.type === 'MAIN' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/10 text-amber-400 border border-amber-500/30')}
-                      >
-                        {ast.server}
-                      </span>
+                      <h4 className="font-bold text-slate-100 text-xs font-mono break-all leading-tight">
+                        {ast.name}
+                      </h4>
+
+                      {/* 聚合副本徽章 */}
+                      <div className="flex items-center gap-1 shrink-0 flex-wrap justify-end">
+                        {ast.isDuplicate ? (
+                          <span className="text-[10px] px-2 py-0.5 rounded font-mono bg-amber-500/20 text-amber-300 border border-amber-500/40 font-semibold flex items-center gap-1">
+                            <AlertTriangle className="w-3 h-3 text-amber-400" /> 双机多副本 (76 + test03)
+                          </span>
+                        ) : ast.hasMain ? (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                            76 (主力存储)
+                          </span>
+                        ) : (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                            test03 (历史仓库)
+                          </span>
+                        )}
+                      </div>
                     </div>
 
+                    {/* 身份凭证栏 */}
                     <div className="bg-slate-950/90 rounded-lg p-2.5 text-[11px] font-mono text-slate-400 space-y-1.5 border border-slate-800/80">
                       <div className="flex items-center justify-between">
-                        <span className="text-slate-500">模型真实架构:</span>
+                        <span className="text-slate-500">模型架构:</span>
                         <span className="text-indigo-300 font-semibold">{ast.architectures?.[0] || ast.model_type || '通用'}</span>
                       </div>
                       {ast.quant_method !== 'none' && (
@@ -456,23 +561,32 @@ export const ModelHub: React.FC = () => {
                       )}
                     </div>
 
-                    <p className="text-[11px] text-slate-500 font-mono mt-2 truncate" title={ast.path}>
-                      {ast.path}
-                    </p>
+                    {/* 物理存储路径列表 (包含全部副本) */}
+                    <div className="mt-2.5 space-y-1 font-mono text-[10.5px]">
+                      {ast.locations.map((loc, lIdx) => (
+                        <div key={lIdx} className="flex items-center gap-1.5 text-slate-400 truncate" title={loc.path}>
+                          <span className={'px-1 py-0.2 rounded text-[9px] font-bold ' + (loc.type === 'MAIN' ? 'bg-emerald-900/50 text-emerald-300' : 'bg-amber-900/50 text-amber-300')}>
+                            {loc.type === 'MAIN' ? '76' : '03'}
+                          </span>
+                          <span className="truncate text-slate-400">{loc.path}</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
 
+                  {/* 底部操作区 */}
                   <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] font-mono text-slate-500">
-                    <span>{ast.time}</span>
+                    <span>{ast.locations[0]?.time || '近期'}</span>
                     <button
                       onClick={() => handleCopy(rsyncCmd, 'loc_' + idx)}
                       className="text-indigo-400 hover:text-indigo-300 flex items-center gap-1 font-medium"
                     >
                       {copiedId === 'loc_' + idx ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                      <span>{copiedId === 'loc_' + idx ? '已复制' : '复制分发命令'}</span>
+                      <span>{copiedId === 'loc_' + idx ? '已复制分发' : ast.isDuplicate ? '复制分发 (优选76)' : '复制分发命令'}</span>
                     </button>
                   </div>
                 </div>
-              );
+              )
             })}
           </div>
         </div>
