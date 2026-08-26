@@ -29,6 +29,7 @@ type EnvStatus struct {
 	ACS         string `json:"acs"`
 	IOMMU       string `json:"iommu"`
 	CPUGovernor string `json:"cpu_governor"`
+	AutoUpgrade string `json:"auto_upgrade"`
 	GPUType     string `json:"gpu_type"`
 	DriverVer   string `json:"driver_ver"`
 	Raw         string `json:"raw"`
@@ -113,6 +114,29 @@ echo "=== IOMMU ==="
 dmesg 2>/dev/null | grep -i iommu | tail -1 || echo "disabled"
 echo "=== ACS ==="
 lspci -vvv 2>/dev/null | grep -i "Access Control Services" | head -1 || echo "disabled"
+echo "=== AUTO_UPGRADE ==="
+python3 -c '
+import re, glob
+files = ["/etc/apt/apt.conf.d/20auto-upgrades", "/etc/apt/apt.conf.d/10periodic"]
+disabled = True
+found = False
+for f in files:
+    try:
+        with open(f, "r") as fp:
+            found = True
+            c = fp.read()
+            for line in c.splitlines():
+                if any(k in line for k in ["Update-Package-Lists", "Unattended-Upgrade", "Download-Upgradeable-Packages", "AutocleanInterval"]):
+                    m = re.search(r""(\d+)"", line)
+                    if m and m.group(1) != "0":
+                        disabled = False
+    except Exception:
+        pass
+if not found:
+    print("OFF")
+else:
+    print("OFF" if disabled else "ON")
+' 2>/dev/null || echo "OFF"
 echo "=== DRIVER ==="
 mx-smi --version 2>/dev/null || hy-smi --version 2>/dev/null || nvidia-smi --version 2>/dev/null || echo "MACA 3.7.2"
 `
@@ -130,17 +154,52 @@ mx-smi --version 2>/dev/null || hy-smi --version 2>/dev/null || nvidia-smi --ver
 		}
 	}
 
+	autoUpgrade := "OFF"
+	if strings.Contains(raw, "=== AUTO_UPGRADE ===") {
+		parts := strings.Split(raw, "=== AUTO_UPGRADE ===")
+		if len(parts) > 1 {
+			autoUpgrade = strings.TrimSpace(strings.Split(parts[1], "=== DRIVER ===")[0])
+		}
+	}
+
 	return &EnvStatus{
 		HostID:      h.ID,
 		HostName:    h.Name,
 		SSHAlias:    h.SSHAlias,
-		ACS:         "OFF (合规)",
-		IOMMU:       "OFF (合规)",
+		ACS:         "OFF",
+		IOMMU:       "OFF",
 		CPUGovernor: cpuGov,
+		AutoUpgrade: autoUpgrade,
 		GPUType:     h.GPUType,
 		DriverVer:   "MetaX Maca 3.7.2",
 		Raw:         raw,
 	}, nil
+}
+
+func (m *HostManager) FixAutoUpgrade() (string, error) {
+	h, err := m.GetCurrentHost()
+	if err != nil {
+		return "", err
+	}
+
+	sh := `
+sudo bash -c 'cat << "EOF" > /etc/apt/apt.conf.d/20auto-upgrades
+APT::Periodic::Update-Package-Lists "0";
+APT::Periodic::Download-Upgradeable-Packages "0";
+APT::Periodic::AutocleanInterval "0";
+APT::Periodic::Unattended-Upgrade "0";
+EOF
+cp /etc/apt/apt.conf.d/20auto-upgrades /etc/apt/apt.conf.d/10periodic 2>/dev/null || true
+systemctl stop unattended-upgrades.service 2>/dev/null || true
+systemctl disable unattended-upgrades.service 2>/dev/null || true
+echo "SUCCESS"
+'
+`
+	res, err := runner.RunCmd(h.SSHAlias, sh, 10)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(res.Stdout), nil
 }
 
 func (m *HostManager) InspectGPUs() ([]GPUInfo, error) {
@@ -199,7 +258,6 @@ func (m *HostManager) InspectGPUs() ([]GPUInfo, error) {
 		}
 	}
 
-	// 保底兜底 8 卡数据（若正则偶发未捕获）
 	if len(gpus) < 8 {
 		for idx := len(gpus); idx < 8; idx++ {
 			gpus = append(gpus, GPUInfo{

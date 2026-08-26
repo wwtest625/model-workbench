@@ -15,6 +15,7 @@ export interface EnvStatus {
   acs: string
   iommu: string
   cpu_governor: string
+  auto_upgrade?: string
   gpu_type: string
   driver_ver: string
   raw: string

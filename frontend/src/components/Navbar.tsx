@@ -82,22 +82,45 @@ export const Navbar: React.FC<NavbarProps> = ({
       </div>
 
       {/* 中间环境预检胶囊状态 */}
-      <div className="flex items-center gap-2 bg-slate-950/80 border border-slate-800 rounded-lg px-3 py-1.5 text-xs">
+      <div className="flex items-center gap-2 bg-slate-950/80 border border-slate-800 rounded-lg px-3 py-1 text-xs">
         <span className="text-slate-400 font-medium flex items-center gap-1">
-          <ShieldCheck className="w-3.5 h-3.5 text-indigo-400" /> 环境预检:
+          <ShieldCheck className="w-3.5 h-3.5 text-slate-400" /> 环境:
         </span>
-        <span className="inline-flex items-center gap-1 text-emerald-400 font-mono bg-emerald-500/10 px-2 py-0.5 rounded">
-          <CheckCircle2 className="w-3 h-3" /> ACS: {envStatus?.acs || 'OFF'}
+        <span className="inline-flex items-center gap-1 text-slate-300 font-mono bg-slate-900 px-1.5 py-0.5 rounded border border-slate-800">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" /> ACS: {envStatus?.acs || 'OFF'}
         </span>
-        <span className="inline-flex items-center gap-1 text-emerald-400 font-mono bg-emerald-500/10 px-2 py-0.5 rounded">
-          <CheckCircle2 className="w-3 h-3" /> IOMMU: {envStatus?.iommu || 'OFF'}
+        <span className="inline-flex items-center gap-1 text-slate-300 font-mono bg-slate-900 px-1.5 py-0.5 rounded border border-slate-800">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" /> IOMMU: {envStatus?.iommu || 'OFF'}
         </span>
-        <span className="inline-flex items-center gap-1 text-emerald-400 font-mono bg-emerald-500/10 px-2 py-0.5 rounded">
-          <Zap className="w-3 h-3" /> CPU: {envStatus?.cpu_governor || 'Performance'}
+        <span className="inline-flex items-center gap-1 text-slate-300 font-mono bg-slate-900 px-1.5 py-0.5 rounded border border-slate-800">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" /> CPU: {envStatus?.cpu_governor || 'perf'}
         </span>
-        <button onClick={onCheckEnv} className="ml-2 text-indigo-400 hover:text-indigo-300 underline font-medium">
-          重新体检
-        </button>
+        <span className="inline-flex items-center gap-1 text-slate-300 font-mono bg-slate-900 px-1.5 py-0.5 rounded border border-slate-800">
+          <span className={`w-1.5 h-1.5 rounded-full ${envStatus?.auto_upgrade === 'ON' ? 'bg-rose-500' : 'bg-emerald-400'}`} /> AutoUpgrade: {envStatus?.auto_upgrade || 'OFF'}
+        </span>
+
+        {envStatus?.auto_upgrade === 'ON' ? (
+          <button
+            onClick={async () => {
+              if (!confirm('确认关闭系统自动更新配置（20auto-upgrades & 10periodic）？')) return
+              try {
+                const res = await fetch('/api/v1/env/fix-auto-upgrade', { method: 'POST' })
+                const data = await res.json()
+                alert(data.message || '已成功关闭自动更新！')
+                onCheckEnv()
+              } catch (e: any) {
+                alert(`修复失败: ${e.message}`)
+              }
+            }}
+            className="ml-1 px-1.5 py-0.5 bg-rose-600/20 text-rose-300 border border-rose-500/40 rounded text-[11px] hover:bg-rose-600/30"
+          >
+            一键关闭
+          </button>
+        ) : (
+          <button onClick={onCheckEnv} className="ml-1 text-slate-400 hover:text-slate-200 font-medium">
+            体检
+          </button>
+        )}
       </div>
 
       {/* 右侧快捷操作 */}

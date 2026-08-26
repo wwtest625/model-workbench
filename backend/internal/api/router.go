@@ -42,6 +42,7 @@ func SetupRouter() *gin.Engine {
 
 		// 硬件与环境
 		v1.GET("/env", getEnv)
+		v1.POST("/env/fix-auto-upgrade", fixAutoUpgrade)
 		v1.GET("/gpus", getGPUs)
 
 		// 模型服务与编排
@@ -123,6 +124,18 @@ func getEnv(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, env)
+}
+
+func fixAutoUpgrade(c *gin.Context) {
+	res, err := host.GetHostManager().FixAutoUpgrade()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"message": "已成功将 20auto-upgrades & 10periodic 全部置 0，并停用无人值守自动更新服务！",
+		"result":  res,
+	})
 }
 
 func getGPUs(c *gin.Context) {
