@@ -1,11 +1,16 @@
 import React, { useState, useEffect } from 'react'
-import { Search, Download, Copy, Check, HardDrive, Cloud, Sparkles, CheckCircle2, RotateCw, ExternalLink, ArrowRight } from 'lucide-react'
+import { Search, Download, Copy, Check, HardDrive, Cloud, ShieldCheck, CheckCircle2, RotateCw, ExternalLink, Cpu, Layers } from 'lucide-react'
 
 interface LocalAsset {
   name: string
   server: string
   path: string
   server_ip: string
+  model_type: string
+  architectures: string[]
+  torch_dtype: string
+  quant_method: string
+  max_position: number
   time: string
   type: string
 }
@@ -20,6 +25,7 @@ interface HubModelItem {
   file_size: number
   local_status: 'LOCAL_76' | 'LOCAL_TEST03' | 'CLOUD_ONLY'
   local_path: string
+  local_meta?: LocalAsset
   download_cmd: string
   rsync_cmd: string
 }
@@ -108,16 +114,23 @@ export const ModelHub: React.FC = () => {
     return `${mb.toFixed(1)} MB`
   }
 
+  const formatContextLen = (len: number) => {
+    if (!len || len <= 0) return ''
+    if (len >= 1048576) return `${(len / 1024 / 1024).toFixed(0)}M 上下文`
+    if (len >= 1024) return `${(len / 1024).toFixed(0)}K 上下文`
+    return `${len} 上下文`
+  }
+
   return (
     <div className="space-y-6">
       {/* 顶部二级导航与快捷概览 */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-sm flex flex-wrap items-center justify-between gap-4">
         <div>
           <h2 className="font-bold text-sm text-slate-100 flex items-center gap-2">
-            <Search className="w-4 h-4 text-indigo-400" /> 模型检索与资产下载中心 (Model Hub)
+            <Search className="w-4 h-4 text-indigo-400" /> 模型检索与资产下载中心 (基于 config.json 深度身份凭证)
           </h2>
           <p className="text-xs text-slate-400 mt-0.5">
-            智能索引本地存储（76 主力 / test03 历史）与 ModelScope 社区，自动关联一致性并一键生成规范下载命令
+            穿透两台存储服务器深度子目录，以 <code className="text-indigo-300">config.json</code> 提取真实架构/量化身份，并智能关联 ModelScope 社区
           </p>
         </div>
 
@@ -139,7 +152,7 @@ export const ModelHub: React.FC = () => {
             }`}
           >
             <HardDrive className="w-3.5 h-3.5" />
-            <span>本地存储已有资产 ({localAssets.length})</span>
+            <span>本地已存深度资产 ({localAssets.length})</span>
           </button>
         </div>
       </div>
@@ -208,12 +221,12 @@ export const ModelHub: React.FC = () => {
 
                     {/* 状态徽章 (与本地资产比对) */}
                     {item.local_status === 'LOCAL_76' && (
-                      <span className="text-[11px] px-2 py-0.5 rounded font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
-                        <CheckCircle2 className="w-3 h-3" /> 76 主力存储已就绪
+                      <span className="text-[11px] px-2 py-0.5 rounded font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center gap-1 font-semibold">
+                        <CheckCircle2 className="w-3 h-3" /> 76 主力已就绪
                       </span>
                     )}
                     {item.local_status === 'LOCAL_TEST03' && (
-                      <span className="text-[11px] px-2 py-0.5 rounded font-mono bg-amber-500/10 text-amber-400 border border-amber-500/30 flex items-center gap-1">
+                      <span className="text-[11px] px-2 py-0.5 rounded font-mono bg-amber-500/10 text-amber-400 border border-amber-500/30 flex items-center gap-1 font-semibold">
                         <HardDrive className="w-3 h-3" /> test03 历史已存档
                       </span>
                     )}
@@ -221,6 +234,27 @@ export const ModelHub: React.FC = () => {
                       <span className="text-[11px] px-2 py-0.5 rounded font-mono bg-slate-800 text-slate-400 border border-slate-700 flex items-center gap-1">
                         <Cloud className="w-3 h-3" /> 云端未下载
                       </span>
+                    )}
+
+                    {/* 匹配到的 config.json 身份凭证标签 */}
+                    {item.local_meta && (
+                      <>
+                        {item.local_meta.architectures?.[0] && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">
+                            {item.local_meta.architectures[0]}
+                          </span>
+                        )}
+                        {item.local_meta.quant_method !== 'none' && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-purple-500/10 text-purple-300 border border-purple-500/20">
+                            {item.local_meta.quant_method}
+                          </span>
+                        )}
+                        {item.local_meta.max_position > 0 && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">
+                            {formatContextLen(item.local_meta.max_position)}
+                          </span>
+                        )}
+                      </>
                     )}
                   </div>
 
@@ -233,7 +267,7 @@ export const ModelHub: React.FC = () => {
                   {/* 路径或命令预览 */}
                   <div className="text-[11px] font-mono bg-slate-950 p-2 rounded text-slate-400 truncate">
                     {item.local_status === 'LOCAL_76' ? (
-                      <span className="text-emerald-400 font-semibold">本地路径: {item.local_path}</span>
+                      <span className="text-emerald-400 font-semibold">本地绝对路径: {item.local_path}</span>
                     ) : (
                       <span className="text-slate-400">{item.download_cmd}</span>
                     )}
@@ -245,7 +279,7 @@ export const ModelHub: React.FC = () => {
                   {item.local_status === 'LOCAL_76' ? (
                     <button
                       onClick={() => handleCopy(item.rsync_cmd, item.id + '_rsync')}
-                      className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-medium flex items-center gap-1.5 border border-slate-700"
+                      className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-medium flex items-center gap-1.5 border border-slate-700 transition"
                       title="复制分发到算力机 146 的 rsync 命令"
                     >
                       {copiedId === item.id + '_rsync' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
@@ -288,19 +322,19 @@ export const ModelHub: React.FC = () => {
         </div>
       )}
 
-      {/* 本地存储资产一览模式 */}
+      {/* 本地深度存储资产一览模式 (基于 config.json 凭证) */}
       {activeTab === 'local' && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <span className="text-xs text-slate-400 font-mono">
-              76 主力服务器 (/data/AI_model/) + test03 历史仓库 (/HDD_Raid/SVN_MODEL_REPO/Model/)
+              穿透两台服务器深度递归检索到的 <strong>{localAssets.length}</strong> 个真实大模型身份凭证
             </span>
             <button
               onClick={() => fetchLocalAssets(true)}
               className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-xs flex items-center gap-1.5 border border-slate-700"
             >
               <RotateCw className={`w-3.5 h-3.5 ${loadingLocal ? 'animate-spin' : ''}`} />
-              <span>重新扫描存储服务器</span>
+              <span>深度重新扫描 config.json</span>
             </button>
           </div>
 
@@ -308,10 +342,10 @@ export const ModelHub: React.FC = () => {
             {localAssets.map((ast, idx) => (
               <div
                 key={idx}
-                className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-2 flex flex-col justify-between hover:border-slate-700 transition"
+                className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-2.5 flex flex-col justify-between hover:border-slate-700 transition"
               >
                 <div>
-                  <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-start justify-between gap-2 mb-1.5">
                     <h4 className="font-bold text-slate-100 text-xs font-mono break-all">{ast.name}</h4>
                     <span
                       className={`text-[10px] px-1.5 py-0.5 rounded font-mono shrink-0 ${
@@ -323,7 +357,34 @@ export const ModelHub: React.FC = () => {
                       {ast.server}
                     </span>
                   </div>
-                  <p className="text-[11px] text-slate-400 font-mono mt-1 truncate" title={ast.path}>
+
+                  {/* 身份凭证条目 */}
+                  <div className="bg-slate-950/80 rounded p-2 text-[11px] font-mono text-slate-400 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-500">模型架构:</span>
+                      <span className="text-indigo-300 font-semibold">{ast.architectures?.[0] || ast.model_type || '通用'}</span>
+                    </div>
+                    {ast.quant_method !== 'none' && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-500">量化方式:</span>
+                        <span className="text-purple-300 font-semibold">{ast.quant_method}</span>
+                      </div>
+                    )}
+                    {ast.torch_dtype && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-500">权重精度:</span>
+                        <span className="text-slate-300">{ast.torch_dtype}</span>
+                      </div>
+                    )}
+                    {ast.max_position > 0 && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-500">上下文上限:</span>
+                        <span className="text-cyan-400">{formatContextLen(ast.max_position)}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <p className="text-[11px] text-slate-500 font-mono mt-1.5 truncate" title={ast.path}>
                     {ast.path}
                   </p>
                 </div>
@@ -331,7 +392,7 @@ export const ModelHub: React.FC = () => {
                 <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] font-mono text-slate-500">
                   <span>{ast.time}</span>
                   <button
-                    onClick={() => handleCopy(`xssh 192.2.56.76 "rsync -avP --progress ${ast.path}/ 192.2.0.146:/data/model/${ast.name}/"`, `loc_${idx}`)}
+                    onClick={() => handleCopy(`xssh 192.2.56.76 "rsync -avP --progress ${ast.path}/ 192.2.0.146:/data/model/${ast.name.split('/').pop()}/"`, `loc_${idx}`)}
                     className="text-indigo-400 hover:text-indigo-300 flex items-center gap-1 font-medium"
                   >
                     {copiedId === `loc_${idx}` ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}

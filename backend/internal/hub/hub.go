@@ -11,27 +11,33 @@ import (
 )
 
 type LocalModelAsset struct {
-	Name       string `json:"name"`
-	Server     string `json:"server"`      // 76 或 test03
-	Path       string `json:"path"`        // 完整路径
-	ServerIP   string `json:"server_ip"`   // 192.2.56.76 或 192.2.29.9
-	Time       string `json:"time"`
-	Type       string `json:"type"`        // MAIN (76) 或 ARCHIVE (test03)
+	Name          string   `json:"name"`
+	Server        string   `json:"server"`
+	ServerIP      string   `json:"server_ip"`
+	Path          string   `json:"path"`
+	ModelType     string   `json:"model_type"`
+	Architectures []string `json:"architectures"`
+	TorchDtype    string   `json:"torch_dtype"`
+	QuantMethod   string   `json:"quant_method"`
+	MaxPosition   int      `json:"max_position"`
+	Time          string   `json:"time"`
+	Type          string   `json:"type"` // MAIN (76) / ARCHIVE (test03)
 }
 
 type HubModelItem struct {
-	ID          string   `json:"id"`           // metax-tech/DeepSeek-V4-Flash-0731-W8A8
-	Name        string   `json:"name"`         // DeepSeek-V4-Flash-0731-W8A8
-	Owner       string   `json:"owner"`        // metax-tech
-	Description string   `json:"description"`
-	Downloads   int      `json:"downloads"`
-	UpdatedAt   string   `json:"updated_at"`
-	FileSize    int64    `json:"file_size"`    // bytes
-	Tags        []string `json:"tags"`
-	LocalStatus string   `json:"local_status"` // LOCAL_76, LOCAL_TEST03, CLOUD_ONLY
-	LocalPath   string   `json:"local_path"`
-	DownloadCmd string   `json:"download_cmd"`
-	RsyncCmd    string   `json:"rsync_cmd"`
+	ID          string            `json:"id"`
+	Name        string            `json:"name"`
+	Owner       string            `json:"owner"`
+	Description string            `json:"description"`
+	Downloads   int               `json:"downloads"`
+	UpdatedAt   string            `json:"updated_at"`
+	FileSize    int64             `json:"file_size"`
+	Tags        []string          `json:"tags"`
+	LocalStatus string            `json:"local_status"` // LOCAL_76, LOCAL_TEST03, CLOUD_ONLY
+	LocalPath   string            `json:"local_path"`
+	LocalMeta   *LocalModelAsset  `json:"local_meta,omitempty"`
+	DownloadCmd string            `json:"download_cmd"`
+	RsyncCmd    string            `json:"rsync_cmd"`
 }
 
 type HubManager struct {
@@ -49,6 +55,102 @@ func GetHubManager() *HubManager {
 	return defaultHubManager
 }
 
+// scanServerDeepByConfigJson 深入递归查找服务器上所有的 config.json 提取真实模型身份凭证
+func scanServerDeepByConfigJson(serverIP string, rootPath string, serverLabel string, sType string) []LocalModelAsset {
+	sh := fmt.Sprintf(`
+python3 -c '
+import os, json, glob, time
+root = "%s"
+results = []
+if os.path.exists(root):
+    for cpath in glob.glob(f"{root}/**/config.json", recursive=True):
+        parent = os.path.dirname(cpath)
+        bname = os.path.basename(parent)
+        # 过滤扩散模型等子组件目录
+        if bname in ["vae", "text_encoder", "audio_vae", "video_vae", "transformer", "transformer_ref", "tokenizer", "source"]:
+            continue
+        try:
+            with open(cpath, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+            # 如果没有 model_type 且没有 architectures，可能是子模块
+            mtype = cfg.get("model_type", "")
+            archs = cfg.get("architectures", [])
+            if not mtype and not archs:
+                continue
+            
+            mtime = os.path.getmtime(cpath)
+            time_str = time.strftime("%%Y-%%m-%%d %%H:%%M", time.localtime(mtime))
+            rel_path = os.path.relpath(parent, root)
+            
+            quant_cfg = cfg.get("quantization_config")
+            quant_method = "none"
+            if isinstance(quant_cfg, dict):
+                quant_method = quant_cfg.get("quant_method", quant_cfg.get("bits", "quantized"))
+                
+            max_pos = cfg.get("max_position_embeddings", cfg.get("seq_length", cfg.get("max_seq_len", 0)))
+            
+            results.append({
+                "name": rel_path,
+                "path": parent,
+                "model_type": str(mtype),
+                "architectures": [str(a) for a in archs] if isinstance(archs, list) else [],
+                "torch_dtype": str(cfg.get("torch_dtype", "")),
+                "quant_method": str(quant_method),
+                "max_position": int(max_pos) if isinstance(max_pos, (int, float)) else 0,
+                "time": time_str
+            })
+        except Exception as e:
+            pass
+print(json.dumps(results, ensure_ascii=False))
+' 2>/dev/null
+`, rootPath)
+
+	res, err := runner.RunCmd(serverIP, sh, 18)
+	if err != nil || !res.OK {
+		return nil
+	}
+
+	var rawList []map[string]interface{}
+	if err := json.Unmarshal([]byte(res.Stdout), &rawList); err != nil {
+		return nil
+	}
+
+	var assets []LocalModelAsset
+	for _, m := range rawList {
+		name, _ := m["name"].(string)
+		path, _ := m["path"].(string)
+		mtype, _ := m["model_type"].(string)
+		torchDtype, _ := m["torch_dtype"].(string)
+		quant, _ := m["quant_method"].(string)
+		maxPos, _ := m["max_position"].(float64)
+		tStr, _ := m["time"].(string)
+
+		var archs []string
+		if rawArchs, ok := m["architectures"].([]interface{}); ok {
+			for _, a := range rawArchs {
+				if s, ok := a.(string); ok {
+					archs = append(archs, s)
+				}
+			}
+		}
+
+		assets = append(assets, LocalModelAsset{
+			Name:          name,
+			Server:        serverLabel,
+			ServerIP:      serverIP,
+			Path:          path,
+			ModelType:     mtype,
+			Architectures: archs,
+			TorchDtype:    torchDtype,
+			QuantMethod:   quant,
+			MaxPosition:   int(maxPos),
+			Time:          tStr,
+			Type:          sType,
+		})
+	}
+	return assets
+}
+
 func (h *HubManager) ScanLocalAssets(force bool) ([]LocalModelAsset, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -59,47 +161,13 @@ func (h *HubManager) ScanLocalAssets(force bool) ([]LocalModelAsset, error) {
 
 	var assets []LocalModelAsset
 
-	// 1. 扫描 76 主力服务器 (/data/AI_model/)
-	res76, err := runner.RunCmd("192.2.56.76", "ls -l --time-style=iso /data/AI_model/ 2>/dev/null", 10)
-	if err == nil && res76.OK {
-		for _, line := range strings.Split(res76.Stdout, "\n") {
-			fields := strings.Fields(line)
-			if len(fields) >= 8 && strings.HasPrefix(fields[0], "d") {
-				name := fields[7]
-				if name != "." && name != ".." && name != "temp-ssd" {
-					assets = append(assets, LocalModelAsset{
-						Name:     name,
-						Server:   "76 (主力存储)",
-						ServerIP: "192.2.56.76",
-						Path:     fmt.Sprintf("/data/AI_model/%s", name),
-						Time:     fields[5] + " " + fields[6],
-						Type:     "MAIN",
-					})
-				}
-			}
-		}
-	}
+	// 1. 深入扫描 76 主力服务器 (/data/AI_model/)
+	list76 := scanServerDeepByConfigJson("192.2.56.76", "/data/AI_model", "76 (主力存储)", "MAIN")
+	assets = append(assets, list76...)
 
-	// 2. 扫描 test03 历史仓库 (/HDD_Raid/SVN_MODEL_REPO/Model/)
-	res29, err := runner.RunCmd("192.2.29.9", "ls -l --time-style=iso /HDD_Raid/SVN_MODEL_REPO/Model/ 2>/dev/null | head -100", 10)
-	if err == nil && res29.OK {
-		for _, line := range strings.Split(res29.Stdout, "\n") {
-			fields := strings.Fields(line)
-			if len(fields) >= 8 && strings.HasPrefix(fields[0], "d") {
-				name := fields[7]
-				if name != "." && name != ".." {
-					assets = append(assets, LocalModelAsset{
-						Name:     name,
-						Server:   "test03 (历史仓库)",
-						ServerIP: "192.2.29.9",
-						Path:     fmt.Sprintf("/HDD_Raid/SVN_MODEL_REPO/Model/%s", name),
-						Time:     fields[5] + " " + fields[6],
-						Type:     "ARCHIVE",
-					})
-				}
-			}
-		}
-	}
+	// 2. 深入扫描 test03 历史仓库 (/HDD_Raid/SVN_MODEL_REPO/Model/)
+	list29 := scanServerDeepByConfigJson("192.2.29.9", "/HDD_Raid/SVN_MODEL_REPO/Model", "test03 (历史仓库)", "ARCHIVE")
+	assets = append(assets, list29...)
 
 	h.localCache = assets
 	h.cacheUpdatedAt = time.Now()
@@ -111,13 +179,14 @@ func normalizeName(s string) string {
 	s = strings.ReplaceAll(s, "-", "")
 	s = strings.ReplaceAll(s, "_", "")
 	s = strings.ReplaceAll(s, ".", "")
+	s = strings.ReplaceAll(s, "/", "")
 	return s
 }
 
-// SearchModelScope 远程查询 ModelScope 社区并与本地资产关联
+// SearchModelScope 远程查询 ModelScope 社区并与本地深度资产进行身份凭证匹配
 func (h *HubManager) SearchModelScope(query string, org string, pageSize int) ([]HubModelItem, error) {
 	if pageSize <= 0 {
-		pageSize = 20
+		pageSize = 25
 	}
 	if org == "" {
 		org = "metax-tech"
@@ -125,7 +194,6 @@ func (h *HubManager) SearchModelScope(query string, org string, pageSize int) ([
 
 	localAssets, _ := h.ScanLocalAssets(false)
 
-	// 通过 76 上安装的 Python modelscope SDK 极速拉取结构化 JSON
 	sh := fmt.Sprintf(`
 python3 -c '
 import json
@@ -167,6 +235,7 @@ except Exception as e:
 		normName := normalizeName(name)
 		localStatus := "CLOUD_ONLY"
 		localPath := ""
+		var matchedMeta *LocalModelAsset
 
 		for _, loc := range localAssets {
 			normLoc := normalizeName(loc.Name)
@@ -174,10 +243,12 @@ except Exception as e:
 				if loc.Type == "MAIN" {
 					localStatus = "LOCAL_76"
 					localPath = loc.Path
+					matchedMeta = &loc
 					break
 				} else if localStatus == "CLOUD_ONLY" {
 					localStatus = "LOCAL_TEST03"
 					localPath = loc.Path
+					matchedMeta = &loc
 				}
 			}
 		}
@@ -196,6 +267,7 @@ except Exception as e:
 			FileSize:    int64(fsize),
 			LocalStatus: localStatus,
 			LocalPath:   localPath,
+			LocalMeta:   matchedMeta,
 			DownloadCmd: downloadCmd,
 			RsyncCmd:    rsyncCmd,
 		})
@@ -204,7 +276,6 @@ except Exception as e:
 	return items, nil
 }
 
-// StartDownloadIn76 在 76 后台启动下载进程
 func (h *HubManager) StartDownloadIn76(modelID string, localDir string) (string, error) {
 	if localDir == "" {
 		parts := strings.Split(modelID, "/")
