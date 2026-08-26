@@ -183,25 +183,25 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
                 </div>
               </div>
 
-              {/* 三大透视按钮 (脚本源码 / Compose 编排 / 容器日志) */}
+              {/* 三大透视按钮 */}
               <div className="grid grid-cols-3 gap-1.5 mb-3 text-[11px]">
                 <button
                   onClick={() => openScript(m)}
                   className="py-1 px-2 bg-slate-800/80 hover:bg-slate-800 text-slate-300 rounded border border-slate-700/60 flex items-center justify-center gap-1 transition"
                 >
-                  <FileCode className="w-3 h-3 text-indigo-400" /> 脚本源码 (编辑)
+                  <FileCode className="w-3 h-3 text-slate-400" /> 脚本源码
                 </button>
                 <button
                   onClick={() => openCompose(m)}
                   className="py-1 px-2 bg-slate-800/80 hover:bg-slate-800 text-slate-300 rounded border border-slate-700/60 flex items-center justify-center gap-1 transition"
                 >
-                  <Container className="w-3 h-3 text-cyan-400" /> Compose 编排
+                  <Container className="w-3 h-3 text-slate-400" /> Compose
                 </button>
                 <button
                   onClick={() => openLogs(m)}
                   className="py-1 px-2 bg-slate-800/80 hover:bg-slate-800 text-slate-300 rounded border border-slate-700/60 flex items-center justify-center gap-1 transition"
                 >
-                  <ScrollText className="w-3 h-3 text-amber-400" /> 容器日志
+                  <ScrollText className="w-3 h-3 text-slate-400" /> 容器日志
                 </button>
               </div>
             </div>

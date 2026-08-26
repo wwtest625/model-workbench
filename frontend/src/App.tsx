@@ -225,7 +225,7 @@ export default function App() {
         {/* GPU 实时拓扑 */}
         <GpuTopology gpus={gpus} />
 
-        {/* 标签栏 (包含全新的 模型检索与下载 Tab) */}
+        {/* 标签栏 */}
         <div className="border-b border-slate-800 flex items-center gap-6 text-sm font-medium">
           <button
             onClick={() => setCurrentTab('models')}
@@ -234,7 +234,7 @@ export default function App() {
             }`}
           >
             <Layers className="w-4 h-4" />
-            <span>模型服务与容器编排 ({models.length})</span>
+            <span>模型服务 ({models.length})</span>
           </button>
           <button
             onClick={() => setCurrentTab('hub')}
@@ -243,7 +243,7 @@ export default function App() {
             }`}
           >
             <Search className="w-4 h-4" />
-            <span>模型检索与下载 (Model Hub)</span>
+            <span>Model Hub</span>
           </button>
           <button
             onClick={() => setCurrentTab('benchmark')}
@@ -252,7 +252,7 @@ export default function App() {
             }`}
           >
             <Activity className="w-4 h-4" />
-            <span>性能常规巡检 (run.py)</span>
+            <span>性能巡检</span>
           </button>
           <button
             onClick={() => setCurrentTab('playground')}
@@ -261,7 +261,7 @@ export default function App() {
             }`}
           >
             <MessageSquare className="w-4 h-4" />
-            <span>在线试玩 (Playground)</span>
+            <span>Playground</span>
           </button>
           <button
             onClick={() => setCurrentTab('logs')}
@@ -270,7 +270,7 @@ export default function App() {
             }`}
           >
             <Archive className="w-4 h-4" />
-            <span>基准归档 (benchmark_logs)</span>
+            <span>基准归档</span>
           </button>
         </div>
 
