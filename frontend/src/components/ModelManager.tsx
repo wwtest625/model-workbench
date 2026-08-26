@@ -174,15 +174,37 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
                 </span>
               </div>
 
-              {/* 镜像与脚本信息 */}
-              <div className="bg-slate-950/60 rounded p-2.5 text-xs font-mono text-slate-400 space-y-1.5 mb-3.5">
-                <div className="truncate" title={m.image}>
-                  <span className="text-slate-500">镜像:</span> <span className="text-slate-300">{m.image}</span>
-                </div>
-                <div className="truncate">
-                  <span className="text-slate-500">脚本:</span> <span className="text-indigo-400">{m.script}</span>
-                </div>
-              </div>
+              {/* 镜像与脚本信息 (Repo 与 Tag 独立换行展示) */}
+              {(() => {
+                const imgStr = m.image || ''
+                const lastColon = imgStr.lastIndexOf(':')
+                const hasTag = lastColon !== -1 && !imgStr.substring(lastColon).includes('/')
+                const repo = hasTag ? imgStr.substring(0, lastColon) : imgStr
+                const tag = hasTag ? imgStr.substring(lastColon + 1) : 'latest'
+
+                return (
+                  <div className="bg-slate-950/60 rounded p-2.5 text-xs font-mono text-slate-400 space-y-1.5 mb-3.5 border border-slate-900">
+                    <div className="space-y-1">
+                      <div className="flex items-start gap-1">
+                        <span className="text-slate-500 shrink-0">Repo:</span>
+                        <span className="text-slate-300 font-medium break-all leading-tight" title={repo}>
+                          {repo}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-slate-500 shrink-0">Tag:</span>
+                        <span className="text-indigo-300 font-semibold px-1.5 py-0.5 rounded bg-indigo-500/10 border border-indigo-500/20 break-all">
+                          {tag}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="pt-1.5 border-t border-slate-900 flex items-center gap-1 truncate">
+                      <span className="text-slate-500 shrink-0">脚本:</span>
+                      <span className="text-slate-300 font-medium truncate">{m.script}</span>
+                    </div>
+                  </div>
+                )
+              })()}
 
               {/* 三大透视按钮 */}
               <div className="grid grid-cols-3 gap-2 mb-3.5 text-xs">
