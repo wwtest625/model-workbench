@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { Play, Square, FileCode, Container, ScrollText, Copy, RotateCw, X, Power } from 'lucide-react'
 import { ModelCard, ModalState } from '../types'
 import { CodeEditor } from './CodeEditor'
+import { LogTerminal } from './LogTerminal'
 
 interface ModelManagerProps {
   models: ModelCard[]
@@ -240,20 +241,12 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
                 <span className="text-xs text-indigo-400 font-mono font-normal">({modal.modelName})</span>
               </h3>
               <div className="flex items-center gap-3">
-                {modal.type !== 'script' && (
+                {modal.type === 'command' && (
                   <button
                     onClick={handleCopy}
                     className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-xs flex items-center gap-1"
                   >
                     <Copy className="w-3 h-3" /> 复制内容
-                  </button>
-                )}
-                {modal.type === 'logs' && activeModel && (
-                  <button
-                    onClick={() => fetchLogs(activeModel)}
-                    className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-xs flex items-center gap-1"
-                  >
-                    <RotateCw className={`w-3 h-3 ${modal.loading ? 'animate-spin' : ''}`} /> 刷新日志
                   </button>
                 )}
                 <button onClick={() => setModal(prev => ({ ...prev, show: false }))} className="text-slate-400 hover:text-slate-200">
@@ -263,16 +256,26 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
             </div>
 
             {/* 弹窗内容主体 */}
-            <div className="flex-1 overflow-hidden p-4 bg-slate-950">
+            <div className="flex-1 overflow-hidden bg-slate-950">
               {modal.type === 'script' && activeModel ? (
-                <CodeEditor
-                  filename={`/home/workspace/${activeModel.script}`}
-                  initialCode={modal.content}
-                  onSave={handleSaveScript}
+                <div className="p-4 h-full">
+                  <CodeEditor
+                    filename={`/home/workspace/${activeModel.script}`}
+                    initialCode={modal.content}
+                    onSave={handleSaveScript}
+                  />
+                </div>
+              ) : modal.type === 'logs' ? (
+                <LogTerminal
+                  modelName={modal.modelName}
+                  initialLogs={modal.content}
+                  isOpen={modal.show}
                 />
               ) : (
-                <div className="p-4 overflow-y-auto font-mono text-xs text-slate-300 bg-black rounded-lg h-full leading-relaxed whitespace-pre-wrap select-text">
-                  {modal.content}
+                <div className="p-4 h-full">
+                  <div className="p-4 overflow-y-auto font-mono text-xs text-slate-300 bg-black rounded-lg h-full leading-relaxed whitespace-pre-wrap select-text">
+                    {modal.content}
+                  </div>
                 </div>
               )}
             </div>
