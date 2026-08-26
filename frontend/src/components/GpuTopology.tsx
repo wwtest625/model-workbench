@@ -14,17 +14,18 @@ export const GpuTopology: React.FC<GpuTopologyProps> = ({ gpus }) => {
   const totalMemUsedNum = gpus.reduce((acc, g) => acc + getUsed(g), 0)
   const totalMemCapNum = gpus.reduce((acc, g) => acc + getTotal(g), 0)
   const totalMemPct = totalMemCapNum > 0 ? ((totalMemUsedNum / totalMemCapNum) * 100).toFixed(1) : '0.0'
+  const gpuModelName = gpus[0]?.name || 'GPU'
 
   return (
     <section className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-sm space-y-4">
       {/* 顶部总览 */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
           <h2 className="font-semibold text-slate-100 text-base flex items-center gap-2">
             <Gauge className="w-5 h-5 text-slate-400" /> GPU 实时拓扑与显存
           </h2>
-          <span className="text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono border border-slate-700">
-            {gpus.length} 卡在线
+          <span className="text-xs px-2.5 py-0.5 rounded-full bg-slate-800 text-indigo-300 font-mono border border-slate-700 font-medium">
+            {gpuModelName} · {gpus.length} 卡在线
           </span>
         </div>
         <span className="text-sm text-slate-400 font-mono">
@@ -41,16 +42,22 @@ export const GpuTopology: React.FC<GpuTopologyProps> = ({ gpus }) => {
           const isHigh = Number(pct) > 80
           const isMid = Number(pct) > 30
           const cardId = gpu.id.startsWith('HCU-') ? gpu.id : `GPU ${gpu.id}`
+          const modelName = gpu.name || 'GPU'
 
           return (
             <div
               key={gpu.id || idx}
               className="bg-slate-950/80 border border-slate-800/80 rounded-lg p-3.5 relative overflow-hidden"
             >
-              {/* 卡片头部 */}
+              {/* 卡片头部：标明型号 */}
               <div className="flex items-center justify-between text-sm mb-2.5 font-mono">
-                <span className="font-semibold text-slate-200">{cardId}</span>
-                <span className="text-slate-400 text-xs">{gpu.temp}°C · {gpu.power}W</span>
+                <div className="flex items-center gap-2 truncate">
+                  <span className="font-bold text-slate-100">{cardId}</span>
+                  <span className="text-[11px] text-slate-400 bg-slate-900 border border-slate-800 px-1.5 py-0.2 rounded truncate">
+                    {modelName}
+                  </span>
+                </div>
+                <span className="text-slate-400 text-xs shrink-0">{gpu.temp}°C · {gpu.power}W</span>
               </div>
 
               {/* 显存进度条 */}
