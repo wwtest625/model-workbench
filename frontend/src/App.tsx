@@ -226,50 +226,50 @@ export default function App() {
         <GpuTopology gpus={gpus} />
 
         {/* 标签栏 */}
-        <div className="border-b border-slate-800 flex items-center gap-6 text-sm font-medium">
+        <div className="border-b border-slate-800 flex items-center gap-8 text-base font-medium">
           <button
             onClick={() => setCurrentTab('models')}
-            className={`flex items-center gap-1.5 pb-3 transition ${
+            className={`flex items-center gap-2 pb-3 transition ${
               currentTab === 'models' ? 'text-indigo-400 border-b-2 border-indigo-500 font-semibold' : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            <Layers className="w-4 h-4" />
+            <Layers className="w-5 h-5" />
             <span>模型服务 ({models.length})</span>
           </button>
           <button
             onClick={() => setCurrentTab('hub')}
-            className={`flex items-center gap-1.5 pb-3 transition ${
+            className={`flex items-center gap-2 pb-3 transition ${
               currentTab === 'hub' ? 'text-indigo-400 border-b-2 border-indigo-500 font-semibold' : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            <Search className="w-4 h-4" />
+            <Search className="w-5 h-5" />
             <span>Model Hub</span>
           </button>
           <button
             onClick={() => setCurrentTab('benchmark')}
-            className={`flex items-center gap-1.5 pb-3 transition ${
+            className={`flex items-center gap-2 pb-3 transition ${
               currentTab === 'benchmark' ? 'text-indigo-400 border-b-2 border-indigo-500 font-semibold' : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            <Activity className="w-4 h-4" />
+            <Activity className="w-5 h-5" />
             <span>性能巡检</span>
           </button>
           <button
             onClick={() => setCurrentTab('playground')}
-            className={`flex items-center gap-1.5 pb-3 transition ${
+            className={`flex items-center gap-2 pb-3 transition ${
               currentTab === 'playground' ? 'text-indigo-400 border-b-2 border-indigo-500 font-semibold' : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            <MessageSquare className="w-4 h-4" />
+            <MessageSquare className="w-5 h-5" />
             <span>Playground</span>
           </button>
           <button
             onClick={() => setCurrentTab('logs')}
-            className={`flex items-center gap-1.5 pb-3 transition ${
+            className={`flex items-center gap-2 pb-3 transition ${
               currentTab === 'logs' ? 'text-indigo-400 border-b-2 border-indigo-500 font-semibold' : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            <Archive className="w-4 h-4" />
+            <Archive className="w-5 h-5" />
             <span>基准归档</span>
           </button>
         </div>

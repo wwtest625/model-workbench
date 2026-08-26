@@ -140,15 +140,15 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
         {models.map((m) => (
           <div
             key={m.name}
-            className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col justify-between hover:border-slate-700 transition shadow-sm"
+            className="bg-slate-900 border border-slate-800 rounded-xl p-5 flex flex-col justify-between hover:border-slate-700 transition shadow-sm"
           >
             <div>
-              <div className="flex items-start justify-between gap-2 mb-2">
+              <div className="flex items-start justify-between gap-2 mb-3">
                 <div>
-                  <h3 className="font-semibold text-slate-100 text-sm flex items-center gap-1.5">
+                  <h3 className="font-semibold text-slate-100 text-base flex items-center gap-2">
                     <span>{m.name}</span>
                     <span
-                      className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${
+                      className={`text-xs px-2 py-0.5 rounded font-mono ${
                         m.engine === 'vLLM'
                           ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
                           : 'bg-purple-500/10 text-purple-400 border border-purple-500/20'
@@ -157,24 +157,24 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
                       {m.engine}
                     </span>
                   </h3>
-                  <p className="text-xs text-slate-400 font-mono mt-0.5">
+                  <p className="text-sm text-slate-400 font-mono mt-1">
                     TP={m.tp} · Port={m.port} {m.pid ? `· PID:${m.pid}` : ''}
                   </p>
                 </div>
                 <span
-                  className={`text-xs font-mono px-2 py-0.5 rounded-full flex items-center gap-1 ${
+                  className={`text-xs font-mono px-2.5 py-1 rounded-full flex items-center gap-1.5 ${
                     m.status === 'RUNNING'
-                      ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
+                      ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 font-medium'
                       : 'bg-slate-800 text-slate-500'
                   }`}
                 >
-                  <span className={`w-1.5 h-1.5 rounded-full ${m.status === 'RUNNING' ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`} />
+                  <span className={`w-2 h-2 rounded-full ${m.status === 'RUNNING' ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`} />
                   <span>{m.status === 'RUNNING' ? '运行中' : '已停止'}</span>
                 </span>
               </div>
 
               {/* 镜像与脚本信息 */}
-              <div className="bg-slate-950/60 rounded p-2 text-xs font-mono text-slate-400 space-y-1 mb-3">
+              <div className="bg-slate-950/60 rounded p-2.5 text-xs font-mono text-slate-400 space-y-1.5 mb-3.5">
                 <div className="truncate" title={m.image}>
                   <span className="text-slate-500">镜像:</span> <span className="text-slate-300">{m.image}</span>
                 </div>
@@ -184,44 +184,44 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
               </div>
 
               {/* 三大透视按钮 */}
-              <div className="grid grid-cols-3 gap-1.5 mb-3 text-[11px]">
+              <div className="grid grid-cols-3 gap-2 mb-3.5 text-xs">
                 <button
                   onClick={() => openScript(m)}
-                  className="py-1 px-2 bg-slate-800/80 hover:bg-slate-800 text-slate-300 rounded border border-slate-700/60 flex items-center justify-center gap-1 transition"
+                  className="py-1.5 px-2.5 bg-slate-800/80 hover:bg-slate-800 text-slate-300 rounded border border-slate-700/60 flex items-center justify-center gap-1.5 transition font-medium"
                 >
-                  <FileCode className="w-3 h-3 text-slate-400" /> 脚本源码
+                  <FileCode className="w-3.5 h-3.5 text-slate-400" /> 脚本源码
                 </button>
                 <button
                   onClick={() => openCompose(m)}
-                  className="py-1 px-2 bg-slate-800/80 hover:bg-slate-800 text-slate-300 rounded border border-slate-700/60 flex items-center justify-center gap-1 transition"
+                  className="py-1.5 px-2.5 bg-slate-800/80 hover:bg-slate-800 text-slate-300 rounded border border-slate-700/60 flex items-center justify-center gap-1.5 transition font-medium"
                 >
-                  <Container className="w-3 h-3 text-slate-400" /> Compose
+                  <Container className="w-3.5 h-3.5 text-slate-400" /> Compose
                 </button>
                 <button
                   onClick={() => openLogs(m)}
-                  className="py-1 px-2 bg-slate-800/80 hover:bg-slate-800 text-slate-300 rounded border border-slate-700/60 flex items-center justify-center gap-1 transition"
+                  className="py-1.5 px-2.5 bg-slate-800/80 hover:bg-slate-800 text-slate-300 rounded border border-slate-700/60 flex items-center justify-center gap-1.5 transition font-medium"
                 >
-                  <ScrollText className="w-3 h-3 text-slate-400" /> 容器日志
+                  <ScrollText className="w-3.5 h-3.5 text-slate-400" /> 容器日志
                 </button>
               </div>
             </div>
 
             {/* 操作按钮 */}
-            <div className="flex items-center gap-2 pt-2 border-t border-slate-800/80">
+            <div className="flex items-center gap-2 pt-2.5 border-t border-slate-800/80">
               {m.status !== 'RUNNING' ? (
                 <button
                   onClick={() => onStartModel(m)}
                   disabled={operatingModel}
-                  className="flex-1 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 text-white rounded text-xs font-medium flex items-center justify-center gap-1.5 transition shadow-sm"
+                  className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 text-white rounded text-sm font-medium flex items-center justify-center gap-2 transition shadow-sm"
                 >
-                  <Play className="w-3 h-3" /> 启动服务
+                  <Play className="w-3.5 h-3.5" /> 启动服务
                 </button>
               ) : (
                 <button
                   onClick={onStopAll}
-                  className="flex-1 py-1.5 bg-rose-600/20 hover:bg-rose-600/30 border border-rose-600/40 text-rose-300 rounded text-xs font-medium flex items-center justify-center gap-1.5 transition"
+                  className="flex-1 py-2 bg-rose-600/20 hover:bg-rose-600/30 border border-rose-600/40 text-rose-300 rounded text-sm font-medium flex items-center justify-center gap-2 transition"
                 >
-                  <Square className="w-3 h-3" /> 停止服务
+                  <Square className="w-3.5 h-3.5" /> 停止服务
                 </button>
               )}
             </div>

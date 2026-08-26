@@ -67,7 +67,6 @@ export const ModelHub: React.FC = () => {
   const orgCacheRef = useRef<{ [org: string]: HubModelItem[] }>({})
   const localLoadedRef = useRef(false)
 
-  // 干净简洁的组织列表（无多余备注小尾巴）
   const orgOptions = [
     { id: 'metax-tech', name: 'metax-tech' },
     { id: 'Qwen', name: 'Qwen' },
@@ -240,14 +239,14 @@ export const ModelHub: React.FC = () => {
   }, [aggregatedAssets, localFilter, localSearch])
 
   return (
-    <div className="space-y-4 text-slate-200">
-      {/* 顶部概览栏 */}
-      <div className="bg-slate-900/90 border border-slate-800/80 rounded-xl p-4 flex flex-wrap items-center justify-between gap-4">
+    <div className="space-y-5 text-slate-200">
+      {/* 顶部概览栏 (字号提升至 text-base / text-sm) */}
+      <div className="bg-slate-900/90 border border-slate-800/80 rounded-xl p-5 flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h2 className="font-medium text-sm text-slate-100 flex items-center gap-2">
-            <Search className="w-4 h-4 text-slate-400" /> Model Hub
+          <h2 className="font-semibold text-base text-slate-100 flex items-center gap-2">
+            <Search className="w-5 h-5 text-slate-400" /> Model Hub
           </h2>
-          <p className="text-xs text-slate-400 mt-1 font-mono">
+          <p className="text-sm text-slate-400 mt-1 font-mono">
             已存模型 <span className="text-slate-200 font-semibold">{aggregatedAssets.length}</span> · 76 ({mainOnlyCount}) · test03 ({archiveOnlyCount})
             {duplicateCount > 0 && (
               <span className="ml-2 text-slate-300">· 重复副本 ({duplicateCount})</span>
@@ -255,20 +254,20 @@ export const ModelHub: React.FC = () => {
           </p>
         </div>
 
-        {/* 模式切换 */}
-        <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800 text-xs">
+        {/* 模式切换 (字号放大为 text-sm) */}
+        <div className="flex items-center gap-1.5 bg-slate-950 p-1.5 rounded-lg border border-slate-800 text-sm">
           <button
             onClick={() => setActiveTab('search')}
-            className={'px-3 py-1.5 rounded-md font-medium transition flex items-center gap-1.5 ' + (activeTab === 'search' ? 'bg-slate-800 text-slate-100 shadow-sm border border-slate-700/60' : 'text-slate-400 hover:text-slate-200')}
+            className={'px-3.5 py-1.5 rounded-md font-medium transition flex items-center gap-2 ' + (activeTab === 'search' ? 'bg-slate-800 text-slate-100 shadow-sm border border-slate-700/60' : 'text-slate-400 hover:text-slate-200')}
           >
-            <Cloud className="w-3.5 h-3.5 text-slate-400" />
+            <Cloud className="w-4 h-4 text-slate-400" />
             <span>ModelScope 检索 ({searchResults.length})</span>
           </button>
           <button
             onClick={() => setActiveTab('local')}
-            className={'px-3 py-1.5 rounded-md font-medium transition flex items-center gap-1.5 ' + (activeTab === 'local' ? 'bg-slate-800 text-slate-100 shadow-sm border border-slate-700/60' : 'text-slate-400 hover:text-slate-200')}
+            className={'px-3.5 py-1.5 rounded-md font-medium transition flex items-center gap-2 ' + (activeTab === 'local' ? 'bg-slate-800 text-slate-100 shadow-sm border border-slate-700/60' : 'text-slate-400 hover:text-slate-200')}
           >
-            <Database className="w-3.5 h-3.5 text-slate-400" />
+            <Database className="w-4 h-4 text-slate-400" />
             <span>本地已存 ({aggregatedAssets.length})</span>
           </button>
         </div>
@@ -276,91 +275,92 @@ export const ModelHub: React.FC = () => {
 
       {/* 检索模式 */}
       {activeTab === 'search' && (
-        <div className="space-y-3">
-          <div className="bg-slate-900/90 border border-slate-800/80 rounded-xl p-3.5 space-y-3">
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-xs text-slate-400 mr-1">组织:</span>
+        <div className="space-y-4">
+          <div className="bg-slate-900/90 border border-slate-800/80 rounded-xl p-4 space-y-3.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm text-slate-400 mr-1 font-medium">组织:</span>
               {orgOptions.map((org) => (
                 <button
                   key={org.id}
                   onClick={() => setSelectedOrg(org.id)}
-                  className={'px-2.5 py-1 rounded-md text-xs font-mono transition border ' + (selectedOrg === org.id ? 'bg-slate-800 text-slate-100 border-slate-600 font-medium' : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-slate-300 hover:border-slate-700')}
+                  className={'px-3 py-1.5 rounded-md text-xs font-mono transition border ' + (selectedOrg === org.id ? 'bg-slate-800 text-slate-100 border-slate-600 font-semibold' : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-slate-200 hover:border-slate-700')}
                 >
                   {org.name}
                 </button>
               ))}
             </div>
 
-            <form onSubmit={(e) => handleSearch(e, true)} className="flex gap-2">
+            <form onSubmit={(e) => handleSearch(e, true)} className="flex gap-3">
               <div className="relative flex-1">
-                <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-2.5" />
+                <Search className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
                 <input
                   type="text"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="搜索模型名称（如 Qwen3.8, DeepSeek, GLM...）"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-slate-600 font-mono"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-10 pr-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-slate-600 font-mono"
                 />
               </div>
               <button
                 type="submit"
                 disabled={searching}
-                className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 rounded-lg text-xs font-medium flex items-center gap-1.5 transition disabled:opacity-50"
+                className="px-5 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 rounded-lg text-sm font-medium flex items-center gap-2 transition disabled:opacity-50"
               >
-                <RotateCw className={'w-3.5 h-3.5 ' + (searching ? 'animate-spin' : '')} />
+                <RotateCw className={'w-4 h-4 ' + (searching ? 'animate-spin' : '')} />
                 <span>{searching ? '检索中...' : '检索'}</span>
               </button>
             </form>
           </div>
 
-          <div className="grid grid-cols-1 gap-2.5">
+          <div className="grid grid-cols-1 gap-3">
             {searchResults.map((item) => (
               <div
                 key={item.id}
-                className="bg-slate-900/80 border border-slate-800/80 hover:border-slate-700/80 rounded-xl p-3.5 transition flex flex-col md:flex-row md:items-center justify-between gap-3"
+                className="bg-slate-900/80 border border-slate-800/80 hover:border-slate-700/80 rounded-xl p-4 transition flex flex-col md:flex-row md:items-center justify-between gap-4"
               >
-                <div className="space-y-1.5 flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-medium text-slate-100 text-xs">{item.name}</span>
-                    <span className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-slate-950 text-slate-400 border border-slate-800">
+                <div className="space-y-2 flex-1 min-w-0">
+                  <div className="flex items-center gap-2.5 flex-wrap">
+                    <span className="font-semibold text-slate-100 text-sm">{item.name}</span>
+                    <span className="text-xs px-2 py-0.5 rounded font-mono bg-slate-950 text-slate-400 border border-slate-800">
                       {item.id}
                     </span>
 
+                    {/* 状态徽章放大为 text-xs */}
                     {item.local_status === 'LOCAL_76' && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-slate-800 text-slate-300 border border-slate-700/80 flex items-center gap-1">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" /> 76 已存
+                      <span className="text-xs px-2 py-0.5 rounded font-mono bg-slate-800 text-slate-300 border border-slate-700/80 flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block" /> 76 已存
                       </span>
                     )}
                     {item.local_status === 'LOCAL_TEST03' && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-slate-800 text-slate-300 border border-slate-700/80 flex items-center gap-1">
-                        <span className="w-1.5 h-1.5 rounded-full bg-slate-400 inline-block" /> test03 存档
+                      <span className="text-xs px-2 py-0.5 rounded font-mono bg-slate-800 text-slate-300 border border-slate-700/80 flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-slate-400 inline-block" /> test03 存档
                       </span>
                     )}
                     {item.local_status === 'CLOUD_ONLY' && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-slate-950 text-slate-500 border border-slate-800/80 flex items-center gap-1">
+                      <span className="text-xs px-2 py-0.5 rounded font-mono bg-slate-950 text-slate-500 border border-slate-800/80 flex items-center gap-1.5">
                         云端
                       </span>
                     )}
 
                     {item.local_meta?.architectures?.[0] && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-slate-950 text-slate-400 border border-slate-800/80">
+                      <span className="text-xs px-2 py-0.5 rounded font-mono bg-slate-950 text-slate-400 border border-slate-800/80">
                         {item.local_meta.architectures[0]}
                       </span>
                     )}
                     {item.local_meta?.quant_method && item.local_meta.quant_method !== 'none' && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-slate-950 text-slate-400 border border-slate-800/80">
+                      <span className="text-xs px-2 py-0.5 rounded font-mono bg-slate-950 text-slate-400 border border-slate-800/80">
                         {item.local_meta.quant_method}
                       </span>
                     )}
                   </div>
 
-                  <div className="text-[11px] text-slate-400 flex items-center gap-3 font-mono">
+                  <div className="text-xs text-slate-400 flex items-center gap-4 font-mono">
                     <span>下载: {item.downloads.toLocaleString()}</span>
                     <span>大小: {formatSize(item.file_size)}</span>
                     <span>更新: {item.updated_at ? item.updated_at.substring(0, 10) : '近期'}</span>
                   </div>
 
-                  <div className="text-[11px] font-mono bg-slate-950/80 px-2 py-1 rounded text-slate-400 truncate border border-slate-900">
+                  <div className="text-xs font-mono bg-slate-950/80 px-2.5 py-1.5 rounded text-slate-400 truncate border border-slate-900">
                     {item.local_status === 'LOCAL_76' ? (
                       <span>76 路径: {item.local_path}</span>
                     ) : item.local_status === 'LOCAL_TEST03' ? (
@@ -371,39 +371,39 @@ export const ModelHub: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="flex items-center gap-2.5 shrink-0">
                   {item.local_status === 'LOCAL_76' ? (
                     <button
                       onClick={() => handleCopy(item.rsync_cmd, item.id + '_rsync')}
-                      className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-medium flex items-center gap-1.5 border border-slate-700 transition"
+                      className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-medium flex items-center gap-1.5 border border-slate-700 transition"
                     >
-                      {copiedId === item.id + '_rsync' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                      {copiedId === item.id + '_rsync' ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
                       <span>{copiedId === item.id + '_rsync' ? '已复制' : '复制分发'}</span>
                     </button>
                   ) : item.local_status === 'LOCAL_TEST03' ? (
                     <button
                       onClick={() => handleCopy(item.rsync_cmd, item.id + '_rsync')}
-                      className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-medium flex items-center gap-1.5 border border-slate-700 transition"
+                      className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-medium flex items-center gap-1.5 border border-slate-700 transition"
                     >
-                      {copiedId === item.id + '_rsync' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                      {copiedId === item.id + '_rsync' ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
                       <span>{copiedId === item.id + '_rsync' ? '已复制' : '复制分发'}</span>
                     </button>
                   ) : (
                     <>
                       <button
                         onClick={() => handleCopy(item.download_cmd, item.id)}
-                        className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-medium flex items-center gap-1.5 border border-slate-700 transition"
+                        className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-medium flex items-center gap-1.5 border border-slate-700 transition"
                       >
-                        {copiedId === item.id ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                        {copiedId === item.id ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
                         <span>{copiedId === item.id ? '已复制' : '复制下载'}</span>
                       </button>
 
                       <button
                         onClick={() => handleStartDownload(item)}
                         disabled={downloadingId === item.id}
-                        className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 text-white rounded-lg text-xs font-medium flex items-center gap-1.5 shadow-sm transition"
+                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 text-white rounded-lg text-xs font-medium flex items-center gap-1.5 shadow-sm transition"
                       >
-                        <Download className={'w-3.5 h-3.5 ' + (downloadingId === item.id ? 'animate-spin' : '')} />
+                        <Download className={'w-4 h-4 ' + (downloadingId === item.id ? 'animate-spin' : '')} />
                         <span>76 下载</span>
                       </button>
                     </>
@@ -413,10 +413,10 @@ export const ModelHub: React.FC = () => {
                     href={'https://modelscope.cn/models/' + item.id}
                     target="_blank"
                     rel="noreferrer"
-                    className="p-1.5 text-slate-400 hover:text-slate-200 rounded bg-slate-950 border border-slate-800"
+                    className="p-2 text-slate-400 hover:text-slate-200 rounded bg-slate-950 border border-slate-800"
                     title="打开 ModelScope"
                   >
-                    <ExternalLink className="w-3.5 h-3.5" />
+                    <ExternalLink className="w-4 h-4" />
                   </a>
                 </div>
               </div>
@@ -427,60 +427,60 @@ export const ModelHub: React.FC = () => {
 
       {/* 本地存储资产 */}
       {activeTab === 'local' && (
-        <div className="space-y-3">
-          <div className="bg-slate-900/90 border border-slate-800/80 rounded-xl p-3.5 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-1.5 bg-slate-950 p-1 rounded-lg border border-slate-800 text-xs">
+        <div className="space-y-4">
+          <div className="bg-slate-900/90 border border-slate-800/80 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2 bg-slate-950 p-1.5 rounded-lg border border-slate-800 text-sm">
               <button
                 onClick={() => setLocalFilter('ALL')}
-                className={'px-2.5 py-1 rounded-md font-medium transition ' + (localFilter === 'ALL' ? 'bg-slate-800 text-slate-100 border border-slate-700/60' : 'text-slate-400 hover:text-slate-200')}
+                className={'px-3 py-1.5 rounded-md font-medium transition ' + (localFilter === 'ALL' ? 'bg-slate-800 text-slate-100 border border-slate-700/60' : 'text-slate-400 hover:text-slate-200')}
               >
                 <span>全部 ({aggregatedAssets.length})</span>
               </button>
               <button
                 onClick={() => setLocalFilter('MAIN')}
-                className={'px-2.5 py-1 rounded-md font-medium transition ' + (localFilter === 'MAIN' ? 'bg-slate-800 text-slate-100 border border-slate-700/60' : 'text-slate-400 hover:text-slate-200')}
+                className={'px-3 py-1.5 rounded-md font-medium transition ' + (localFilter === 'MAIN' ? 'bg-slate-800 text-slate-100 border border-slate-700/60' : 'text-slate-400 hover:text-slate-200')}
               >
                 <span>76 ({mainOnlyCount})</span>
               </button>
               <button
                 onClick={() => setLocalFilter('ARCHIVE')}
-                className={'px-2.5 py-1 rounded-md font-medium transition ' + (localFilter === 'ARCHIVE' ? 'bg-slate-800 text-slate-100 border border-slate-700/60' : 'text-slate-400 hover:text-slate-200')}
+                className={'px-3 py-1.5 rounded-md font-medium transition ' + (localFilter === 'ARCHIVE' ? 'bg-slate-800 text-slate-100 border border-slate-700/60' : 'text-slate-400 hover:text-slate-200')}
               >
                 <span>test03 ({archiveOnlyCount})</span>
               </button>
               <button
                 onClick={() => setLocalFilter('DUPLICATE')}
-                className={'px-2.5 py-1 rounded-md font-medium transition flex items-center gap-1 ' + (localFilter === 'DUPLICATE' ? 'bg-slate-800 text-slate-100 border border-slate-700/60' : 'text-slate-400 hover:text-slate-200')}
+                className={'px-3 py-1.5 rounded-md font-medium transition flex items-center gap-1.5 ' + (localFilter === 'DUPLICATE' ? 'bg-slate-800 text-slate-100 border border-slate-700/60' : 'text-slate-400 hover:text-slate-200')}
               >
-                <AlertCircle className="w-3 h-3 text-slate-400" />
+                <AlertCircle className="w-4 h-4 text-slate-400" />
                 <span>重复副本 ({duplicateCount})</span>
               </button>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
               <div className="relative">
-                <Search className="w-3 h-3 text-slate-500 absolute left-2.5 top-2" />
+                <Search className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
                 <input
                   type="text"
                   value={localSearch}
                   onChange={(e) => setLocalSearch(e.target.value)}
                   placeholder="过滤模型名称/架构..."
-                  className="bg-slate-950 border border-slate-800 rounded-lg pl-7 pr-2.5 py-1 text-xs text-slate-200 focus:outline-none focus:border-slate-600 font-mono w-44"
+                  className="bg-slate-950 border border-slate-800 rounded-lg pl-9 pr-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-slate-600 font-mono w-48"
                 />
               </div>
 
               <button
                 onClick={() => fetchLocalAssets(true)}
                 disabled={loadingLocal}
-                className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs flex items-center gap-1 border border-slate-700 transition"
+                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs flex items-center gap-1.5 border border-slate-700 transition"
               >
-                <RotateCw className={'w-3 h-3 ' + (loadingLocal ? 'animate-spin' : '')} />
+                <RotateCw className={'w-3.5 h-3.5 ' + (loadingLocal ? 'animate-spin' : '')} />
                 <span>{loadingLocal ? '扫描中...' : '刷新'}</span>
               </button>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
             {filteredAggregatedAssets.map((ast, idx) => {
               const preferredLoc = ast.locations.find((l) => l.type === 'MAIN') || ast.locations[0]
               const rsyncCmd = 'xssh ' + preferredLoc.server_ip + ' "rsync -avP --progress ' + preferredLoc.path + '/ 192.2.0.146:/data/model/' + ast.name + '/"'
@@ -488,35 +488,37 @@ export const ModelHub: React.FC = () => {
               return (
                 <div
                   key={idx}
-                  className="bg-slate-900/80 border border-slate-800/80 hover:border-slate-700/80 rounded-xl p-3.5 space-y-2.5 flex flex-col justify-between transition shadow-none"
+                  className="bg-slate-900/80 border border-slate-800/80 hover:border-slate-700/80 rounded-xl p-4 space-y-3 flex flex-col justify-between transition shadow-none"
                 >
                   <div>
+                    {/* 卡片头部 */}
                     <div className="flex items-start justify-between gap-2 mb-2">
-                      <h4 className="font-medium text-slate-100 text-xs font-mono break-all leading-tight">
+                      <h4 className="font-semibold text-slate-100 text-sm font-mono break-all leading-tight">
                         {ast.name}
                       </h4>
 
-                      <div className="flex items-center gap-1 shrink-0">
+                      <div className="flex items-center gap-1.5 shrink-0">
                         {ast.isDuplicate ? (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-slate-800 text-slate-300 border border-slate-700/80 flex items-center gap-1">
+                          <span className="text-xs px-2 py-0.5 rounded font-mono bg-slate-800 text-slate-300 border border-slate-700/80 flex items-center gap-1.5">
                             <span className="w-1.5 h-1.5 rounded-full bg-slate-400" /> 双副本
                           </span>
                         ) : ast.hasMain ? (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-slate-950 text-slate-400 border border-slate-800">
+                          <span className="text-xs px-2 py-0.5 rounded font-mono bg-slate-950 text-slate-400 border border-slate-800">
                             76
                           </span>
                         ) : (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-slate-950 text-slate-400 border border-slate-800">
+                          <span className="text-xs px-2 py-0.5 rounded font-mono bg-slate-950 text-slate-400 border border-slate-800">
                             test03
                           </span>
                         )}
                       </div>
                     </div>
 
-                    <div className="bg-slate-950/70 rounded-lg p-2 text-[11px] font-mono text-slate-400 space-y-1 border border-slate-900">
+                    {/* 元数据 (字号提升至 text-xs) */}
+                    <div className="bg-slate-950/70 rounded-lg p-2.5 text-xs font-mono text-slate-400 space-y-1.5 border border-slate-900">
                       <div className="flex items-center justify-between">
                         <span className="text-slate-500">架构:</span>
-                        <span className="text-slate-300 font-medium truncate max-w-[170px]">{ast.architectures?.[0] || ast.model_type || '通用'}</span>
+                        <span className="text-slate-300 font-medium truncate max-w-[190px]">{ast.architectures?.[0] || ast.model_type || '通用'}</span>
                       </div>
                       {ast.quant_method !== 'none' && (
                         <div className="flex items-center justify-between">
@@ -538,9 +540,10 @@ export const ModelHub: React.FC = () => {
                       )}
                     </div>
 
-                    <div className="mt-2 space-y-1 font-mono text-[10px]">
+                    {/* 物理路径列表 */}
+                    <div className="mt-2.5 space-y-1 font-mono text-xs">
                       {ast.locations.map((loc, lIdx) => (
-                        <div key={lIdx} className="flex items-center gap-1 text-slate-400 truncate" title={loc.path}>
+                        <div key={lIdx} className="flex items-center gap-1.5 text-slate-400 truncate" title={loc.path}>
                           <span className="text-slate-500 font-bold shrink-0">
                             {loc.type === 'MAIN' ? '76:' : '03:'}
                           </span>
@@ -550,13 +553,14 @@ export const ModelHub: React.FC = () => {
                     </div>
                   </div>
 
-                  <div className="pt-2 border-t border-slate-800/60 flex items-center justify-between text-[11px] font-mono text-slate-500">
+                  {/* 底部 */}
+                  <div className="pt-2.5 border-t border-slate-800/60 flex items-center justify-between text-xs font-mono text-slate-500">
                     <span>{ast.locations[0]?.time || '近期'}</span>
                     <button
                       onClick={() => handleCopy(rsyncCmd, 'loc_' + idx)}
-                      className="text-slate-300 hover:text-white flex items-center gap-1 font-medium transition"
+                      className="text-slate-300 hover:text-white flex items-center gap-1 font-medium transition text-xs"
                     >
-                      {copiedId === 'loc_' + idx ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                      {copiedId === 'loc_' + idx ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                       <span>{copiedId === 'loc_' + idx ? '已复制' : '复制分发'}</span>
                     </button>
                   </div>
