@@ -1,15 +1,16 @@
 import React, { useState, useEffect } from 'react'
-import { Layers, Activity, MessageSquare, Archive } from 'lucide-react'
+import { Layers, Search, Activity, MessageSquare, Archive } from 'lucide-react'
 import { Navbar } from './components/Navbar'
 import { GpuTopology } from './components/GpuTopology'
 import { ModelManager } from './components/ModelManager'
+import { ModelHub } from './components/ModelHub'
 import { BenchmarkConsole } from './components/BenchmarkConsole'
 import { Playground } from './components/Playground'
 import { LogArchive } from './components/LogArchive'
 import { HostConfig, EnvStatus, GPUInfo, ModelCard, LogFile } from './types'
 
 export default function App() {
-  const [currentTab, setCurrentTab] = useState<'models' | 'benchmark' | 'playground' | 'logs'>('models')
+  const [currentTab, setCurrentTab] = useState<'models' | 'hub' | 'benchmark' | 'playground' | 'logs'>('models')
   const [hosts, setHosts] = useState<HostConfig[]>([])
   const [currentHost, setCurrentHost] = useState<HostConfig | null>(null)
   const [envStatus, setEnvStatus] = useState<EnvStatus | null>(null)
@@ -224,7 +225,7 @@ export default function App() {
         {/* GPU 实时拓扑 */}
         <GpuTopology gpus={gpus} />
 
-        {/* 标签栏 (精简四大核心实用 Tab) */}
+        {/* 标签栏 (包含全新的 模型检索与下载 Tab) */}
         <div className="border-b border-slate-800 flex items-center gap-6 text-sm font-medium">
           <button
             onClick={() => setCurrentTab('models')}
@@ -234,6 +235,15 @@ export default function App() {
           >
             <Layers className="w-4 h-4" />
             <span>模型服务与容器编排 ({models.length})</span>
+          </button>
+          <button
+            onClick={() => setCurrentTab('hub')}
+            className={`flex items-center gap-1.5 pb-3 transition ${
+              currentTab === 'hub' ? 'text-indigo-400 border-b-2 border-indigo-500 font-semibold' : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Search className="w-4 h-4" />
+            <span>模型检索与下载 (Model Hub)</span>
           </button>
           <button
             onClick={() => setCurrentTab('benchmark')}
@@ -273,6 +283,8 @@ export default function App() {
             onStopAll={handleStopAll}
           />
         )}
+
+        {currentTab === 'hub' && <ModelHub />}
 
         {currentTab === 'benchmark' && (
           <BenchmarkConsole

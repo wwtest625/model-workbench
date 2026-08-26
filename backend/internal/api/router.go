@@ -14,6 +14,7 @@ import (
 	"metax-workbench/internal/benchmark"
 	"metax-workbench/internal/config"
 	"metax-workbench/internal/host"
+	"metax-workbench/internal/hub"
 	"metax-workbench/internal/model"
 )
 
@@ -59,6 +60,11 @@ func SetupRouter() *gin.Engine {
 
 		// 模型试玩 (直接 HTTP 代理到当前主机)
 		v1.POST("/chat", chatCompletions)
+
+		// 模型资产检索与 ModelScope 下载中心
+		v1.GET("/hub/local", getHubLocalAssets)
+		v1.GET("/hub/search", searchHubModelScope)
+		v1.POST("/hub/start-download", startHubDownload)
 	}
 
 	return r
@@ -370,4 +376,48 @@ func saveModelScript(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("脚本 %s 保存成功", req.Name)})
+}
+
+
+func getHubLocalAssets(c *gin.Context) {
+	force := c.Query("force") == "true"
+	assets, err := hub.GetHubManager().ScanLocalAssets(force)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"assets": assets})
+}
+
+func searchHubModelScope(c *gin.Context) {
+	q := c.Query("q")
+	org := c.Query("org")
+	items, err := hub.GetHubManager().SearchModelScope(q, org, 30)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"models": items})
+}
+
+type StartDownloadReq struct {
+	ModelID  string `json:"model_id" binding:"required"`
+	LocalDir string `json:"local_dir"`
+}
+
+func startHubDownload(c *gin.Context) {
+	var req StartDownloadReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	pid, err := hub.GetHubManager().StartDownloadIn76(req.ModelID, req.LocalDir)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"message": fmt.Sprintf("已在 76 存储服务器后台启动下载 (PID: %s)", pid),
+		"pid":     pid,
+	})
 }
