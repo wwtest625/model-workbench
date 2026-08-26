@@ -1,8 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState, useCallback } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
-import { Play, Square, RotateCw, Trash2, Copy, Check, Terminal as TermIcon } from 'lucide-react'
+import { Play, Square, RotateCw, Trash2, Copy, Check, Terminal as TermIcon, Clock } from 'lucide-react'
 
 interface LogTerminalProps {
   modelName: string
@@ -14,18 +14,18 @@ export const LogTerminal: React.FC<LogTerminalProps> = ({ modelName, initialLogs
   const terminalRef = useRef<HTMLDivElement>(null)
   const xtermRef = useRef<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
-  const timerRef = useRef<any>(null)
   const lastLogsRef = useRef<string>('')
 
   const [isStreaming, setIsStreaming] = useState<boolean>(true)
   const [copied, setCopied] = useState<boolean>(false)
   const [fetching, setFetching] = useState<boolean>(false)
   const [lineCount, setLineCount] = useState<number>(0)
+  const [countdown, setCountdown] = useState<number>(2)
+  const [lastUpdateTime, setLastUpdateTime] = useState<string>('')
 
   // 格式化换行并写入终端
   const writeLogsToTerminal = (term: Terminal, text: string) => {
     if (!text) return
-    // 规范化换行 LF -> CRLF 确保 xterm 正确换行
     const normalized = text.replace(/\r?\n/g, '\r\n')
     term.clear()
     term.write(normalized)
@@ -78,10 +78,11 @@ export const LogTerminal: React.FC<LogTerminalProps> = ({ modelName, initialLogs
     xtermRef.current = term
     fitAddonRef.current = fitAddon
 
-    // 写入初始日志
     if (initialLogs) {
       writeLogsToTerminal(term, initialLogs)
       lastLogsRef.current = initialLogs
+      const now = new Date()
+      setLastUpdateTime(now.toTimeString().substring(0, 8))
     }
 
     const handleResize = () => {
@@ -91,14 +92,10 @@ export const LogTerminal: React.FC<LogTerminalProps> = ({ modelName, initialLogs
     }
 
     window.addEventListener('resize', handleResize)
-    // 延迟 100ms 再次 fit，防止 modal 展开动画尺寸未就绪
     setTimeout(handleResize, 150)
 
     return () => {
       window.removeEventListener('resize', handleResize)
-      if (timerRef.current) {
-        clearInterval(timerRef.current)
-      }
       term.dispose()
       xtermRef.current = null
       fitAddonRef.current = null
@@ -106,7 +103,7 @@ export const LogTerminal: React.FC<LogTerminalProps> = ({ modelName, initialLogs
   }, [isOpen])
 
   // 单次拉取最新日志
-  const fetchLatestLogs = async () => {
+  const fetchLatestLogs = useCallback(async () => {
     if (!isOpen) return
     setFetching(true)
     try {
@@ -117,38 +114,32 @@ export const LogTerminal: React.FC<LogTerminalProps> = ({ modelName, initialLogs
         writeLogsToTerminal(xtermRef.current, newLogs)
         lastLogsRef.current = newLogs
       }
+      const now = new Date()
+      setLastUpdateTime(now.toTimeString().substring(0, 8))
     } catch (e) {
       console.error('拉取日志失败', e)
     } finally {
       setFetching(false)
     }
-  }
+  }, [isOpen, modelName])
 
-  // 持续刷新控制 (定时器)
+  // 动态真实倒计时调度引擎 (每秒跳动 1 次，倒数到 0 触发拉取并重置为 2)
   useEffect(() => {
-    if (!isOpen) return
+    if (!isOpen || !isStreaming) return
 
-    if (isStreaming) {
-      // 开启轮询：每 2 秒刷新一次
-      fetchLatestLogs()
-      timerRef.current = setInterval(() => {
-        fetchLatestLogs()
-      }, 2000)
-    } else {
-      // 停止轮询
-      if (timerRef.current) {
-        clearInterval(timerRef.current)
-        timerRef.current = null
-      }
-    }
+    setCountdown(2)
+    const interval = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev <= 1) {
+          fetchLatestLogs()
+          return 2
+        }
+        return prev - 1
+      })
+    }, 1000)
 
-    return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current)
-        timerRef.current = null
-      }
-    }
-  }, [isStreaming, isOpen, modelName])
+    return () => clearInterval(interval)
+  }, [isOpen, isStreaming, fetchLatestLogs])
 
   // 复制当前终端日志
   const handleCopyLogs = () => {
@@ -175,9 +166,9 @@ export const LogTerminal: React.FC<LogTerminalProps> = ({ modelName, initialLogs
             <span>{modelName || '容器日志'}</span>
           </span>
 
-          {/* 刷新状态指示徽章 */}
+          {/* 实时动态倒计时徽章 */}
           <span
-            className={`px-2 py-0.5 rounded font-mono flex items-center gap-1.5 border transition ${
+            className={`px-2.5 py-0.5 rounded font-mono flex items-center gap-1.5 border transition ${
               isStreaming
                 ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
                 : 'bg-slate-800 text-slate-400 border-slate-700'
@@ -188,8 +179,25 @@ export const LogTerminal: React.FC<LogTerminalProps> = ({ modelName, initialLogs
                 isStreaming ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'
               }`}
             />
-            <span>{isStreaming ? '持续刷新中 (2s)' : '已暂停'}</span>
+            {isStreaming ? (
+              <span className="flex items-center gap-1">
+                <span>持续刷新</span>
+                <span className="bg-emerald-400/20 px-1 rounded text-[11px] font-bold text-emerald-300 w-5 text-center inline-block">
+                  {countdown}s
+                </span>
+              </span>
+            ) : (
+              <span>已暂停</span>
+            )}
           </span>
+
+          {/* 上次更新时间戳 */}
+          {lastUpdateTime && (
+            <span className="text-slate-500 font-mono hidden md:flex items-center gap-1">
+              <Clock className="w-3 h-3" />
+              <span>{lastUpdateTime}</span>
+            </span>
+          )}
 
           {lineCount > 0 && (
             <span className="text-slate-500 font-mono hidden sm:inline">
@@ -224,7 +232,7 @@ export const LogTerminal: React.FC<LogTerminalProps> = ({ modelName, initialLogs
 
           {/* 手动刷新一次 */}
           <button
-            onClick={fetchLatestLogs}
+            onClick={() => fetchLatestLogs()}
             disabled={fetching}
             className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg flex items-center gap-1 border border-slate-700 transition disabled:opacity-50"
             title="立即手动拉取最新日志"
