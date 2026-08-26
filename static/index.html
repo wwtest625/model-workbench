@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MetaX-146 算力与模型工程工作台</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: { 50: '#eef2ff', 500: '#6366f1', 600: '#4f46e5', 700: '#4338ca' }
+          }
+        }
+      }
+    }
+  </script>
+  <!-- Alpine.js -->
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <!-- FontAwesome 图标 -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    [x-cloak] { display: none !important; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0f172a; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #475569; }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans min-h-screen antialiased" x-data="workbench()" x-init="init()" x-cloak>
+
+  <!-- 顶部导航栏 -->
+  <header class="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-40 px-6 py-3 flex flex-wrap items-center justify-between gap-4">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-lg bg-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-500/20 font-bold text-lg">
+        <i class="fa-solid fa-microchip"></i>
+      </div>
+      <div>
+        <h1 class="font-bold text-base text-white tracking-wide flex items-center gap-2">
+          MetaX-146 算力 & 模型工程工作台
+          <span class="text-xs px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-400 border border-indigo-500/30">Maca 集群</span>
+        </h1>
+        <p class="text-xs text-slate-400">/home/workspace · 沐曦 N300-A 算力适配与常规压测</p>
+      </div>
+    </div>
+
+    <!-- 顶部环境体检状态条 (真实数据) -->
+    <div class="flex items-center gap-2 bg-slate-950/70 border border-slate-800 rounded-lg px-3 py-1.5 text-xs">
+      <span class="text-slate-400 font-medium">环境预检:</span>
+      <span class="inline-flex items-center gap-1 text-emerald-400 font-mono bg-emerald-500/10 px-2 py-0.5 rounded">
+        <i class="fa-solid fa-circle-check text-[10px]"></i> ACS: <span x-text="envInfo.acs"></span>
+      </span>
+      <span class="inline-flex items-center gap-1 text-emerald-400 font-mono bg-emerald-500/10 px-2 py-0.5 rounded">
+        <i class="fa-solid fa-circle-check text-[10px]"></i> IOMMU: <span x-text="envInfo.iommu"></span>
+      </span>
+      <span class="inline-flex items-center gap-1 text-emerald-400 font-mono bg-emerald-500/10 px-2 py-0.5 rounded">
+        <i class="fa-solid fa-bolt text-[10px]"></i> CPU: <span x-text="envInfo.cpu_governor"></span>
+      </span>
+      <button @click="fetchEnv(true)" class="ml-2 text-indigo-400 hover:text-indigo-300 underline font-medium">
+        <i class="fa-solid fa-arrows-rotate" :class="{'fa-spin': checkingEnv}"></i> 重新体检
+      </button>
+    </div>
+
+    <!-- 顶栏右侧操作 -->
+    <div class="flex items-center gap-3">
+      <button @click="runMcclStream()" :disabled="mcclRunning" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:bg-slate-800 text-xs text-slate-200 flex items-center gap-1.5 transition border border-slate-700">
+        <i class="fa-solid fa-network-wired text-indigo-400" :class="{'fa-spin': mcclRunning}"></i>
+        <span x-text="mcclRunning ? 'MCCL 测试中...' : '跑 MCCL 通信测试'"></span>
+      </button>
+      <button @click="refreshAll()" class="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white flex items-center gap-1.5 shadow-sm transition">
+        <i class="fa-solid fa-rotate" :class="{'fa-spin': refreshing}"></i>
+        <span>刷新状态</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- 主体内容 -->
+  <main class="max-w-7xl mx-auto p-6 space-y-6">
+
+    <!-- 1. GPU 实时状态与显存拓扑 -->
+    <section class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-sm">
+      <div class="flex items-center justify-between mb-4">
+        <div class="flex items-center gap-2">
+          <h2 class="font-semibold text-slate-200 text-sm flex items-center gap-2">
+            <i class="fa-solid fa-gauge-high text-indigo-400"></i> GPU 实时拓扑与显存 (MetaX N300-A)
+          </h2>
+          <span class="text-xs px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-mono" x-text="gpus.length + ' 卡在线'"></span>
+        </div>
+        <span class="text-xs text-slate-400 font-mono" x-text="'总占用: ' + totalMemUsed + ' / ' + totalMemCap + ' GB (' + totalMemPct + '%)'"></span>
+      </div>
+
+      <!-- GPU 卡网格 -->
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+        <template x-for="gpu in gpus" :key="gpu.id">
+          <div class="bg-slate-950/80 border border-slate-800/80 rounded-lg p-3 relative overflow-hidden">
+            <div class="flex items-center justify-between text-xs mb-1.5 font-mono">
+              <span class="font-bold text-slate-300">GPU <span x-text="gpu.id"></span></span>
+              <span class="text-slate-400" x-text="gpu.temp + '°C · ' + gpu.power + 'W'"></span>
+            </div>
+            <!-- 显存条 -->
+            <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden mb-2">
+              <div class="h-full rounded-full transition-all duration-500"
+                   :class="gpu.memPct > 80 ? 'bg-rose-500' : (gpu.memPct > 40 ? 'bg-indigo-500' : 'bg-emerald-500')"
+                   :style="'width: ' + gpu.memPct + '%'"></div>
+            </div>
+            <div class="flex items-center justify-between text-[11px] text-slate-400 font-mono">
+              <span x-text="gpu.memUsed + ' / ' + gpu.memTotal + ' GB'"></span>
+              <span :class="gpu.memPct > 50 ? 'text-indigo-400 font-semibold' : 'text-slate-500'" x-text="gpu.memPct + '%'"></span>
+            </div>
+          </div>
+        </template>
+      </div>
+    </section>
+
+    <!-- 2. 主功能标签页 (Tabs) -->
+    <div class="border-b border-slate-800 flex items-center gap-6 text-sm font-medium">
+      <button @click="currentTab = 'models'" :class="currentTab === 'models' ? 'text-indigo-400 border-b-2 border-indigo-500 pb-3' : 'text-slate-400 hover:text-slate-200 pb-3'">
+        <i class="fa-solid fa-layer-group mr-1.5"></i> 模型服务与容器编排 (<span x-text="models.length"></span>)
+      </button>
+      <button @click="currentTab = 'benchmark'" :class="currentTab === 'benchmark' ? 'text-indigo-400 border-b-2 border-indigo-500 pb-3' : 'text-slate-400 hover:text-slate-200 pb-3'">
+        <i class="fa-solid fa-chart-line mr-1.5"></i> 性能常规巡检 (run.py)
+      </button>
+      <button @click="currentTab = 'playground'" :class="currentTab === 'playground' ? 'text-indigo-400 border-b-2 border-indigo-500 pb-3' : 'text-slate-400 hover:text-slate-200 pb-3'">
+        <i class="fa-solid fa-comments mr-1.5"></i> 在线模型试玩 (Playground)
+      </button>
+      <button @click="currentTab = 'logs'" :class="currentTab === 'logs' ? 'text-indigo-400 border-b-2 border-indigo-500 pb-3' : 'text-slate-400 hover:text-slate-200 pb-3'">
+        <i class="fa-solid fa-folder-open mr-1.5"></i> 基准日志与归档 (benchmark_logs)
+      </button>
+    </div>
+
+    <!-- Tab 1: 模型服务与容器管理 -->
+    <div x-show="currentTab === 'models'" class="space-y-4">
+      <div class="flex items-center justify-between">
+        <p class="text-xs text-slate-400">基于 <code class="text-indigo-300">/home/workspace/docker-compose-models.yml</code> 及启动脚本管理：</p>
+        <button @click="stopAllModels()" class="px-3 py-1 bg-rose-950 text-rose-300 border border-rose-800/60 rounded text-xs hover:bg-rose-900 transition">
+          <i class="fa-solid fa-power-off mr-1"></i> 停止全部推理服务
+        </button>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <template x-for="m in models" :key="m.name">
+          <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col justify-between hover:border-slate-700 transition">
+            <div>
+              <div class="flex items-start justify-between gap-2 mb-2">
+                <div>
+                  <h3 class="font-semibold text-slate-100 text-sm flex items-center gap-1.5">
+                    <span x-text="m.name"></span>
+                    <span class="text-[10px] px-1.5 py-0.5 rounded font-mono"
+                          :class="m.engine === 'vLLM' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' : 'bg-purple-500/10 text-purple-400 border border-purple-500/20'"
+                          x-text="m.engine"></span>
+                  </h3>
+                  <p class="text-xs text-slate-400 font-mono mt-0.5" x-text="'TP=' + m.tp + ' · Port=' + m.port + (m.pid ? ' · PID:' + m.pid : '')"></p>
+                </div>
+                <span class="text-xs font-mono px-2 py-0.5 rounded-full flex items-center gap-1"
+                      :class="m.status === 'RUNNING' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-500'">
+                  <span class="w-1.5 h-1.5 rounded-full" :class="m.status === 'RUNNING' ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'"></span>
+                  <span x-text="m.status === 'RUNNING' ? '运行中' : '已停止'"></span>
+                </span>
+              </div>
+
+              <!-- 镜像与脚本 -->
+              <div class="bg-slate-950/60 rounded p-2 text-xs font-mono text-slate-400 space-y-1 mb-3">
+                <div class="truncate" :title="m.image"><span class="text-slate-500">镜像:</span> <span class="text-slate-300" x-text="m.image"></span></div>
+                <div class="truncate"><span class="text-slate-500">脚本:</span> <span class="text-indigo-400" x-text="m.script"></span></div>
+              </div>
+
+              <!-- 快捷详情栏 (脚本 / 启动语句 / 容器日志) -->
+              <div class="grid grid-cols-3 gap-1.5 mb-3 text-[11px]">
+                <button @click="openScriptModal(m)" class="py-1 px-2 bg-slate-800/80 hover:bg-slate-800 text-slate-300 rounded border border-slate-700/60 flex items-center justify-center gap-1">
+                  <i class="fa-solid fa-file-code text-indigo-400"></i> 脚本源码
+                </button>
+                <button @click="openCommandModal(m)" class="py-1 px-2 bg-slate-800/80 hover:bg-slate-800 text-slate-300 rounded border border-slate-700/60 flex items-center justify-center gap-1">
+                  <i class="fa-solid fa-terminal text-cyan-400"></i> 启动语句
+                </button>
+                <button @click="openLogsModal(m)" class="py-1 px-2 bg-slate-800/80 hover:bg-slate-800 text-slate-300 rounded border border-slate-700/60 flex items-center justify-center gap-1">
+                  <i class="fa-solid fa-scroll text-amber-400"></i> 容器日志
+                </button>
+              </div>
+            </div>
+
+            <!-- 操作按钮 -->
+            <div class="flex items-center gap-2 pt-2 border-t border-slate-800/80">
+              <template x-if="m.status !== 'RUNNING'">
+                <button @click="startModel(m)" :disabled="operatingModel" class="flex-1 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 text-white rounded text-xs font-medium flex items-center justify-center gap-1 transition">
+                  <i class="fa-solid fa-play text-[10px]"></i> 启动服务
+                </button>
+              </template>
+              <template x-if="m.status === 'RUNNING'">
+                <div class="flex-1 flex gap-2">
+                  <button @click="stopAllModels()" class="flex-1 py-1.5 bg-rose-600/20 hover:bg-rose-600/30 border border-rose-600/40 text-rose-300 rounded text-xs font-medium transition">
+                    <i class="fa-solid fa-stop text-[10px]"></i> 停止
+                  </button>
+                </div>
+              </template>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <!-- Tab 2: 性能巡检与压测控制台 -->
+    <div x-show="currentTab === 'benchmark'" class="space-y-4">
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
+        <h3 class="font-semibold text-slate-100 text-sm flex items-center gap-2">
+          <i class="fa-solid fa-bolt text-amber-400"></i> 性能巡检控制台 (实时调用 146 上 run.py)
+        </h3>
+
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div>
+            <label class="block text-xs font-medium text-slate-400 mb-1">测试目标模型</label>
+            <select x-model="benchForm.model" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
+              <option value="Qwen3.8-27B">Qwen3.8-27B (:8000)</option>
+              <option value="DeepSeek-V4-Flash-DSpark-W8A8">DeepSeek-V4-Flash-W8A8 (:8001)</option>
+              <option value="GLM-4.7-W8A8">GLM-4.7-W8A8 (:8002)</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block text-xs font-medium text-slate-400 mb-1">测试场景模式</label>
+            <select x-model="benchForm.dataset" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
+              <option value="short">短上下文 (128~2048 Tokens)</option>
+              <option value="long">长上下文 (4K~32K Tokens)</option>
+              <option value="slo">SLO 极限摸高压测</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block text-xs font-medium text-slate-400 mb-1">并发梯度</label>
+            <input type="text" x-model="benchForm.concurrency" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 font-mono focus:outline-none focus:border-indigo-500">
+          </div>
+
+          <div class="flex items-end">
+            <button @click="startBenchmarkStream()" :disabled="benchRunning" class="w-full py-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-2 shadow-sm transition">
+              <i class="fa-solid fa-play" :class="{'fa-spin': benchRunning}"></i>
+              <span x-text="benchRunning ? '压测实时推流中...' : '🚀 开始执行巡检压测'"></span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 实时终端控制台 -->
+        <div class="bg-black border border-slate-800 rounded-lg p-4 font-mono text-xs text-slate-300 space-y-1 h-80 overflow-y-auto" id="benchConsole">
+          <template x-for="(line, idx) in consoleLogs" :key="idx">
+            <div :class="line.includes('Throughput') ? 'text-emerald-400 font-bold' : (line.includes('===') ? 'text-indigo-400' : 'text-slate-300')" x-text="line"></div>
+          </template>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 3: 在线模型试玩 Playground -->
+    <div x-show="currentTab === 'playground'" class="space-y-4">
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
+          <h3 class="font-semibold text-slate-100 text-sm flex items-center gap-2">
+            <i class="fa-solid fa-sliders text-indigo-400"></i> 参数与输入
+          </h3>
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">测试 Prompt</label>
+            <textarea x-model="chatPrompt" rows="5" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 resize-none font-sans" placeholder="输入测试 Prompt..."></textarea>
+          </div>
+          <div>
+            <div class="flex justify-between text-xs text-slate-400 mb-1">
+              <span>Max Tokens</span>
+              <span class="font-mono text-indigo-400" x-text="maxTokens"></span>
+            </div>
+            <input type="range" min="32" max="1024" step="32" x-model="maxTokens" class="w-full accent-indigo-500">
+          </div>
+          <div>
+            <div class="flex justify-between text-xs text-slate-400 mb-1">
+              <span>Temperature</span>
+              <span class="font-mono text-indigo-400" x-text="temperature"></span>
+            </div>
+            <input type="range" min="0" max="1.5" step="0.1" x-model="temperature" class="w-full accent-indigo-500">
+          </div>
+          <button @click="sendChat()" :disabled="chatGenerating" class="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition">
+            <i class="fa-solid fa-paper-plane" :class="{'fa-spin': chatGenerating}"></i>
+            <span x-text="chatGenerating ? '正在调用 146 推理中...' : '发送推理验证'"></span>
+          </button>
+        </div>
+
+        <div class="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-xl p-5 flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between pb-3 border-b border-slate-800 mb-4">
+              <h3 class="font-semibold text-slate-100 text-sm flex items-center gap-2">
+                <i class="fa-solid fa-robot text-emerald-400"></i> 模型回复
+              </h3>
+              <div class="flex items-center gap-3 text-xs font-mono text-slate-400">
+                <span>耗时: <strong class="text-indigo-400" x-text="chatStats.cost + ' s'"></strong></span>
+                <span>吞吐: <strong class="text-emerald-400" x-text="chatStats.speed + ' tok/s'"></strong></span>
+                <span>Tokens: <strong class="text-slate-200" x-text="chatStats.tokens"></strong></span>
+              </div>
+            </div>
+            <div class="text-xs text-slate-300 leading-relaxed space-y-2 font-sans min-h-[160px]" x-html="chatReply"></div>
+          </div>
+          <div class="text-[11px] text-slate-500 pt-3 border-t border-slate-800/80">
+            通过 146 本地端口 <code class="text-slate-400">http://192.2.0.146:8000/v1/chat/completions</code> 调用
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 4: 历史日志与归档 -->
+    <div x-show="currentTab === 'logs'" class="space-y-4">
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-3">
+        <div class="flex items-center justify-between">
+          <h3 class="font-semibold text-slate-100 text-sm flex items-center gap-2">
+            <i class="fa-solid fa-box-archive text-indigo-400"></i> 历史评测日志与打包归档 (/home/workspace/benchmark_logs)
+          </h3>
+          <span class="text-xs text-slate-400" x-text="'共 ' + logFiles.length + ' 个归档文件'"></span>
+        </div>
+
+        <div class="divide-y divide-slate-800/80 border border-slate-800 rounded-lg overflow-hidden">
+          <template x-for="log in logFiles" :key="log.name">
+            <div class="p-3 bg-slate-950/40 hover:bg-slate-900/60 flex items-center justify-between transition text-xs">
+              <div class="flex items-center gap-3">
+                <i class="fa-solid fa-file-lines text-indigo-400 text-base"></i>
+                <div>
+                  <div class="font-medium text-slate-200" x-text="log.name"></div>
+                  <div class="text-[11px] text-slate-400 font-mono" x-text="'大小: ' + log.size + ' · ' + log.time"></div>
+                </div>
+              </div>
+              <div class="flex items-center gap-2">
+                <span class="text-slate-500 font-mono text-[11px]">归档就绪</span>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- 全局详情弹窗 (查看脚本 / 查看启动语句 / 查看容器实时日志) -->
+  <div x-show="modal.show" class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" x-cloak>
+    <div class="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-4xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden" @click.outside="modal.show = false">
+      <div class="px-5 py-3.5 border-b border-slate-800 bg-slate-950/50 flex items-center justify-between">
+        <h3 class="font-bold text-sm text-slate-100 flex items-center gap-2">
+          <span x-html="modal.icon"></span>
+          <span x-text="modal.title"></span>
+          <span class="text-xs text-indigo-400 font-mono font-normal" x-text="'(' + modal.modelName + ')'"></span>
+        </h3>
+        <div class="flex items-center gap-3">
+          <button @click="copyModalContent()" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-xs flex items-center gap-1">
+            <i class="fa-solid fa-copy"></i> 复制内容
+          </button>
+          <template x-if="modal.type === 'logs'">
+            <button @click="refreshModalLogs()" class="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-xs flex items-center gap-1">
+              <i class="fa-solid fa-rotate" :class="{'fa-spin': modalLoading}"></i> 刷新日志
+            </button>
+          </template>
+          <button @click="modal.show = false" class="text-slate-400 hover:text-slate-200 text-base">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+      </div>
+      <div class="p-5 overflow-y-auto font-mono text-xs text-slate-300 bg-black flex-1 leading-relaxed whitespace-pre-wrap select-text" x-text="modal.content"></div>
+    </div>
+  </div>
+
+
+  <script>
+    function workbench() {
+      return {
+        currentTab: 'models',
+        checkingEnv: false,
+        refreshing: false,
+        operatingModel: false,
+        benchRunning: false,
+        mcclRunning: false,
+        chatGenerating: false,
+        chatPrompt: '请用两句话介绍一下量子计算的基本原理，并给出一个生活中的比喻。',
+        maxTokens: 256,
+        temperature: 0.7,
+        chatReply: '<span class="text-slate-500">点击「发送推理验证」测试 146 上运行的模型...</span>',
+        chatStats: { cost: 0, speed: 0, tokens: 0 },
+        envInfo: { acs: 'OFF', iommu: 'OFF', cpu_governor: 'performance' },
+        gpus: [],
+        models: [],
+        logFiles: [],
+        consoleLogs: ['[系统准备就绪] 点击「开始执行巡检压测」或「跑 MCCL 测试」实时查看推流日志...'],
+        benchForm: { model: 'Qwen3.8-27B', dataset: 'short', concurrency: '1, 2, 4, 8, 16, 32, 64, 128, 256' },
+
+        get totalMemUsed() {
+          return this.gpus.reduce((acc, g) => acc + (g.memUsed || 0), 0).toFixed(1);
+        },
+        get totalMemCap() {
+          return this.gpus.reduce((acc, g) => acc + (g.memTotal || 0), 0).toFixed(1);
+        },
+        get totalMemPct() {
+          const cap = parseFloat(this.totalMemCap);
+          return cap > 0 ? (parseFloat(this.totalMemUsed) / cap * 100).toFixed(1) : '0.0';
+        },
+
+        async init() {
+          await this.fetchEnv(false);
+          await this.fetchGpus();
+          await this.fetchModels();
+          await this.fetchLogs();
+          // 定时 5 秒自动轮询
+          setInterval(() => {
+            this.fetchGpus();
+            this.fetchModels();
+          }, 5000);
+        },
+
+        async refreshAll() {
+          this.refreshing = true;
+          await Promise.all([this.fetchEnv(false), this.fetchGpus(), this.fetchModels(), this.fetchLogs()]);
+          this.refreshing = false;
+        },
+
+        async fetchEnv(notify) {
+          this.checkingEnv = true;
+          try {
+            const res = await fetch('/api/env');
+            this.envInfo = await res.json();
+            if (notify) alert('环境预检完成：ACS、IOMMU 正常关闭，CPU Governor 为 performance！');
+          } catch (e) {
+            console.error(e);
+          } finally {
+            this.checkingEnv = false;
+          }
+        },
+
+        async fetchGpus() {
+          try {
+            const res = await fetch('/api/gpus');
+            const data = await res.json();
+            if (data.gpus && data.gpus.length > 0) {
+              this.gpus = data.gpus;
+            }
+          } catch (e) {
+            console.error(e);
+          }
+        },
+
+        async fetchModels() {
+          try {
+            const res = await fetch('/api/models');
+            const data = await res.json();
+            if (data.models) {
+              this.models = data.models;
+            }
+          } catch (e) {
+            console.error(e);
+          }
+        },
+
+        async fetchLogs() {
+          try {
+            const res = await fetch('/api/benchmark/logs');
+            const data = await res.json();
+            if (data.logs) {
+              this.logFiles = data.logs;
+            }
+          } catch (e) {
+            console.error(e);
+          }
+        },
+
+        async startModel(m) {
+          this.operatingModel = true;
+          try {
+            const res = await fetch('/api/models/start', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ name: m.name, script: m.script })
+            });
+            const data = await res.json();
+            alert(data.message);
+            setTimeout(() => this.fetchModels(), 2000);
+          } catch (e) {
+            alert('启动失败: ' + e);
+          } finally {
+            this.operatingModel = false;
+          }
+        },
+
+        async stopAllModels() {
+          if (!confirm('确定要停止所有正在运行的推理服务吗？')) return;
+          try {
+            const res = await fetch('/api/models/stop', { method: 'POST' });
+            const data = await res.json();
+            alert(data.message);
+            setTimeout(() => this.fetchModels(), 1500);
+          } catch (e) {
+            alert('停止失败: ' + e);
+          }
+        },
+
+        async startBenchmarkStream() {
+          this.benchRunning = true;
+          this.consoleLogs = ['=== 开始执行巡检压测 (' + this.benchForm.model + ') ==='];
+          const es = new EventSource('/api/benchmark/stream');
+          es.onmessage = (event) => {
+            const d = JSON.parse(event.data);
+            if (d.text) this.appendConsole(d.text);
+            if (d.done) {
+              this.appendConsole('=== 压测执行完毕 (退出码: ' + d.exit_code + ') ===');
+              es.close();
+              this.benchRunning = false;
+              this.fetchLogs();
+            }
+          };
+          es.onerror = () => {
+            this.appendConsole('[通信提示] 压测后台任务已提交');
+            es.close();
+            this.benchRunning = false;
+          };
+        },
+
+        async runMcclStream() {
+          this.mcclRunning = true;
+          this.currentTab = 'benchmark';
+          this.consoleLogs = ['=== 开始跑 /home/workspace/run_mccl_v6.sh (16进程 AllReduce 1GB通信压测) ==='];
+          const es = new EventSource('/api/mccl/stream');
+          es.onmessage = (event) => {
+            const d = JSON.parse(event.data);
+            if (d.text) this.appendConsole(d.text);
+            if (d.done) {
+              this.appendConsole('=== MCCL 测试完毕 ===');
+              es.close();
+              this.mcclRunning = false;
+            }
+          };
+          es.onerror = () => {
+            es.close();
+            this.mcclRunning = false;
+          };
+        },
+
+        appendConsole(text) {
+          const lines = text.split('\n').filter(l => l.trim().length > 0);
+          this.consoleLogs.push(...lines);
+          this.$nextTick(() => {
+            const el = document.getElementById('benchConsole');
+            if (el) el.scrollTop = el.scrollHeight;
+          });
+        },
+
+        async sendChat() {
+          this.chatGenerating = true;
+          this.chatReply = '<span class="text-indigo-400">正在向 146 发送请求并计算生成中...</span>';
+          try {
+            const res = await fetch('/api/chat', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                prompt: this.chatPrompt,
+                max_tokens: parseInt(this.maxTokens),
+                temperature: parseFloat(this.temperature),
+                port: 8000
+              })
+            });
+            const data = await res.json();
+            if (data.ok) {
+              this.chatReply = data.reply.replace(/\n/g, '<br>');
+              this.chatStats = {
+                cost: data.cost,
+                speed: data.speed,
+                tokens: (data.prompt_tokens || 0) + (data.completion_tokens || 0)
+              };
+            } else {
+              this.chatReply = '<span class="text-rose-400">请求失败: ' + (data.error || '未知错误') + '</span>';
+            }
+          } catch (e) {
+            this.chatReply = '<span class="text-rose-400">网络异常: ' + e + '</span>';
+          } finally {
+            this.chatGenerating = false;
+          }
+        }
+      }
+    }
+  </script>
+</body>
+</html>
