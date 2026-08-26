@@ -1,7 +1,7 @@
 server_port: 8899
 hosts:
   - id: "metax-146"
-    name: "146 · 沐曦 8卡 N300-A"
+    name: "146 · 沐曦 16卡 N300-A"
     ssh_alias: "192.2.0.146"
     workspace: "/home/workspace"
     gpu_type: "metax"

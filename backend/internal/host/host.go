@@ -366,7 +366,6 @@ func (m *HostManager) InspectGPUs() ([]GPUInfo, error) {
 	for i := 0; i < len(lines)-1; i++ {
 		match := reCard.FindStringSubmatch(lines[i])
 		if len(match) >= 4 && i+1 < len(lines) {
-			boardIdx := match[1]
 			gpuIdx := match[3]
 			utilMatch := reUtil.FindStringSubmatch(lines[i])
 			memLine := lines[i+1]
@@ -383,14 +382,16 @@ func (m *HostManager) InspectGPUs() ([]GPUInfo, error) {
 			temp, _ := strconv.Atoi(tempMatch[1])
 			pwr, _ := strconv.Atoi(pwrMatch[1])
 
-			memPct := float64(usedMB) / float64(totalMB) * 100.0
+			usedGB := float64(usedMB) / 1024.0
+			totalGB := float64(totalMB) / 1024.0
+			memPct := (usedGB / totalGB) * 100.0
 
 			gpus = append(gpus, GPUInfo{
-				ID:       fmt.Sprintf("%s-%s", boardIdx, gpuIdx),
-				Name:     "MetaX N300",
+				ID:       gpuIdx,
+				Name:     "MetaX N300-A",
 				Usage:    util,
-				MemUsed:  float64(usedMB) / 1024.0,
-				MemTotal: float64(totalMB) / 1024.0,
+				MemUsed:  float64(int(usedGB*10)) / 10.0,
+				MemTotal: float64(int(totalGB*10)) / 10.0,
 				MemPct:   float64(int(memPct*10)) / 10.0,
 				Temp:     temp,
 				Power:    pwr,
@@ -406,7 +407,7 @@ func (m *HostManager) InspectGPUs() ([]GPUInfo, error) {
 				Name:     "GPU Cluster",
 				Usage:    0,
 				MemUsed:  0,
-				MemTotal: 64.0,
+				MemTotal: 48.0,
 				MemPct:   0,
 				Temp:     25,
 				Power:    160,
