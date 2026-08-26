@@ -7,10 +7,14 @@ interface GpuTopologyProps {
 }
 
 export const GpuTopology: React.FC<GpuTopologyProps> = ({ gpus }) => {
-  const totalMemUsedNum = gpus.reduce((acc, g) => acc + (Number(g.memUsed) || 0), 0)
-  const totalMemCapNum = gpus.reduce((acc, g) => acc + (Number(g.memTotal) || 0), 0)
+  const getUsed = (g: GPUInfo) => Number(g.mem_used ?? g.memUsed ?? 0)
+  const getTotal = (g: GPUInfo) => Number(g.mem_total ?? g.memTotal ?? 0)
+  const getPct = (g: GPUInfo) => Number(g.mem_pct ?? g.memPct ?? 0)
+
+  const totalMemUsedNum = gpus.reduce((acc, g) => acc + getUsed(g), 0)
+  const totalMemCapNum = gpus.reduce((acc, g) => acc + getTotal(g), 0)
   const totalMemPct = totalMemCapNum > 0 ? ((totalMemUsedNum / totalMemCapNum) * 100).toFixed(1) : '0.0'
-  const activeCards = gpus.filter((g) => (g.memPct || 0) > 10 || (g.usage || 0) > 0).length
+  const activeCards = gpus.filter((g) => getPct(g) > 10 || (g.usage || 0) > 0).length
 
   // 根据 GPU 数量自动决定每行网格列数 (8卡/16卡智能自适应)
   const gridColsClass =
@@ -49,9 +53,9 @@ export const GpuTopology: React.FC<GpuTopologyProps> = ({ gpus }) => {
       {/* GPU 卡片自适应网格 */}
       <div className={`grid ${gridColsClass} gap-3`}>
         {gpus.map((gpu, idx) => {
-          const used = Number(gpu.memUsed || 0).toFixed(1)
-          const total = Number(gpu.memTotal || 0).toFixed(1)
-          const pct = Math.min(Math.max(Number(gpu.memPct || 0), 0), 100).toFixed(1)
+          const used = getUsed(gpu).toFixed(1)
+          const total = getTotal(gpu).toFixed(1)
+          const pct = Math.min(Math.max(getPct(gpu), 0), 100).toFixed(1)
           const isHigh = Number(pct) > 80
           const isMid = Number(pct) > 30
           const cardId = gpu.id.startsWith('HCU-') ? gpu.id : `GPU ${gpu.id}`

@@ -25,9 +25,12 @@ export interface GPUInfo {
   id: string
   name: string
   usage: number
-  memUsed: number
-  memTotal: number
-  memPct: number
+  mem_used?: number
+  mem_total?: number
+  mem_pct?: number
+  memUsed?: number
+  memTotal?: number
+  memPct?: number
   temp: number
   power: number
 }
