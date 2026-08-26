@@ -153,7 +153,7 @@ func (h *HubManager) ScanLocalAssets(force bool) ([]LocalModelAsset, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	if !force && len(h.localCache) > 0 && time.Since(h.cacheUpdatedAt) < 3*time.Minute {
+	if !force && len(h.localCache) > 0 && time.Since(h.cacheUpdatedAt) < 15*time.Minute {
 		return h.localCache, nil
 	}
 

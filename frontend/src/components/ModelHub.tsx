@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react'
-import { Search, Download, Copy, Check, HardDrive, Cloud, Server, CheckCircle2, RotateCw, ExternalLink, Database, ArrowRight } from 'lucide-react'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
+import { Search, Download, Copy, Check, HardDrive, Cloud, Server, CheckCircle2, RotateCw, ExternalLink, Database } from 'lucide-react'
 
 interface LocalAsset {
   name: string
@@ -38,10 +38,15 @@ export const ModelHub: React.FC = () => {
   const [selectedOrg, setSelectedOrg] = useState('metax-tech')
   const [searching, setSearching] = useState(false)
   const [loadingLocal, setLoadingLocal] = useState(false)
+  
+  // 缓存池 (避免切换 Tab 重复触发请求)
   const [localAssets, setLocalAssets] = useState<LocalAsset[]>([])
   const [searchResults, setSearchResults] = useState<HubModelItem[]>([])
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [downloadingId, setDownloadingId] = useState<string | null>(null)
+
+  const orgCacheRef = useRef<{ [org: string]: HubModelItem[] }>({})
+  const localLoadedRef = useRef(false)
 
   const orgOptions = [
     { id: 'metax-tech', name: '⭐ metax-tech (沐曦官方适配)', desc: '官方量化/Maca 专享' },
@@ -51,17 +56,30 @@ export const ModelHub: React.FC = () => {
     { id: 'MiniMax', name: 'MiniMax (名之梦)', desc: 'MiniMax 官方' },
   ]
 
+  // 1. 懒加载：仅在切换组织时检查缓存，有缓存直接读缓存，无缓存才请求
   useEffect(() => {
-    fetchLocalAssets(false)
-    handleSearch()
+    if (!query && orgCacheRef.current[selectedOrg]) {
+      setSearchResults(orgCacheRef.current[selectedOrg])
+    } else {
+      handleSearch(undefined, false)
+    }
   }, [selectedOrg])
+
+  // 2. 懒加载：当用户真正点击「本地存储已有资产」Tab 时才触发首次拉取
+  useEffect(() => {
+    if (activeTab === 'local' && !localLoadedRef.current) {
+      fetchLocalAssets(false)
+    }
+  }, [activeTab])
 
   const fetchLocalAssets = async (force: boolean) => {
     setLoadingLocal(true)
     try {
       const res = await fetch('/api/v1/hub/local?force=' + force)
       const data = await res.json()
-      setLocalAssets(data.assets || [])
+      const list = data.assets || []
+      setLocalAssets(list)
+      localLoadedRef.current = true
     } catch (e) {
       console.error(e)
     } finally {
@@ -69,13 +87,24 @@ export const ModelHub: React.FC = () => {
     }
   }
 
-  const handleSearch = async (e?: React.FormEvent) => {
+  const handleSearch = async (e?: React.FormEvent, force: boolean = true) => {
     if (e) e.preventDefault()
+    
+    // 如果无 query 且有组织缓存且非强制刷新，直接使用缓存
+    if (!force && !query && orgCacheRef.current[selectedOrg]) {
+      setSearchResults(orgCacheRef.current[selectedOrg])
+      return
+    }
+
     setSearching(true)
     try {
       const res = await fetch('/api/v1/hub/search?org=' + encodeURIComponent(selectedOrg) + '&q=' + encodeURIComponent(query))
       const data = await res.json()
-      setSearchResults(data.models || [])
+      const models = data.models || []
+      setSearchResults(models)
+      if (!query) {
+        orgCacheRef.current[selectedOrg] = models
+      }
     } catch (e) {
       console.error(e)
     } finally {
@@ -145,15 +174,14 @@ export const ModelHub: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* 顶部二级导航与快捷概览 */}
+      {/* 顶部二级导航 */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-sm flex flex-wrap items-center justify-between gap-4">
         <div>
           <h2 className="font-bold text-sm text-slate-100 flex items-center gap-2">
-            <Search className="w-4 h-4 text-indigo-400" /> 模型检索与存储中心 (76 主力 / test03 历史 · config.json 凭证)
+            <Search className="w-4 h-4 text-indigo-400" /> 模型检索与存储中心 (懒加载模式 · 毫秒级秒开)
           </h2>
           <p className="text-xs text-slate-400 mt-0.5">
-            <strong className="text-emerald-400">76 主力服务器</strong> ({mainAssetsCount} 个) 与{' '}
-            <strong className="text-amber-400">test03 历史仓库</strong> ({archiveAssetsCount} 个) · 已存模型直接从源机分发至 146，避免重复在 76 下载
+            前端与后端双重缓存，按需异步拉取，告别多余的重复网络与 SSH 扫描
           </p>
         </div>
 
@@ -171,7 +199,7 @@ export const ModelHub: React.FC = () => {
             className={'px-3 py-1.5 rounded-md font-medium transition flex items-center gap-1.5 ' + (activeTab === 'local' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200')}
           >
             <Database className="w-3.5 h-3.5" />
-            <span>本地存储已有资产 ({localAssets.length})</span>
+            <span>本地存储已有资产 ({localLoadedRef.current ? localAssets.length : '点击加载'})</span>
           </button>
         </div>
       </div>
@@ -194,7 +222,7 @@ export const ModelHub: React.FC = () => {
               ))}
             </div>
 
-            <form onSubmit={handleSearch} className="flex gap-3">
+            <form onSubmit={(e) => handleSearch(e, true)} className="flex gap-3">
               <div className="relative flex-1">
                 <Search className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
                 <input
@@ -231,12 +259,12 @@ export const ModelHub: React.FC = () => {
 
                     {item.local_status === 'LOCAL_76' && (
                       <span className="text-[11px] px-2 py-0.5 rounded font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center gap-1 font-semibold">
-                        <CheckCircle2 className="w-3 h-3" /> 76 主力已就绪 (无需下载)
+                        <CheckCircle2 className="w-3 h-3" /> 76 主力已就绪
                       </span>
                     )}
                     {item.local_status === 'LOCAL_TEST03' && (
                       <span className="text-[11px] px-2 py-0.5 rounded font-mono bg-amber-500/10 text-amber-400 border border-amber-500/30 flex items-center gap-1 font-semibold">
-                        <HardDrive className="w-3 h-3" /> test03 历史已存档 (直接分发，无需下载)
+                        <HardDrive className="w-3 h-3" /> test03 历史已存档
                       </span>
                     )}
                     {item.local_status === 'CLOUD_ONLY' && (
@@ -334,7 +362,7 @@ export const ModelHub: React.FC = () => {
         </div>
       )}
 
-      {/* 本地存储资产一览模式 */}
+      {/* 本地存储资产一览模式 (懒加载) */}
       {activeTab === 'local' && (
         <div className="space-y-4">
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-wrap items-center justify-between gap-4">
@@ -379,7 +407,7 @@ export const ModelHub: React.FC = () => {
                 className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs flex items-center gap-1.5 border border-slate-700 transition"
               >
                 <RotateCw className={'w-3.5 h-3.5 ' + (loadingLocal ? 'animate-spin' : '')} />
-                <span>{loadingLocal ? '正在扫描...' : '刷新列表'}</span>
+                <span>{loadingLocal ? '正在扫描...' : '强制刷新'}</span>
               </button>
             </div>
           </div>
