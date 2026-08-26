@@ -2,6 +2,9 @@ package host
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -15,9 +18,9 @@ type GPUInfo struct {
 	ID       string  `json:"id"`
 	Name     string  `json:"name"`
 	Usage    int     `json:"usage"`
-	MemUsed  float64 `json:"memUsed"`  // GB
-	MemTotal float64 `json:"memTotal"` // GB
-	MemPct   float64 `json:"memPct"`
+	MemUsed  float64 `json:"mem_used"`
+	MemTotal float64 `json:"mem_total"`
+	MemPct   float64 `json:"mem_pct"`
 	Temp     int     `json:"temp"`
 	Power    int     `json:"power"`
 }
@@ -36,25 +39,33 @@ type EnvStatus struct {
 }
 
 type HostManager struct {
-	currentHostID string
 	mu            sync.RWMutex
+	currentHostID string
 }
 
-var defaultManager *HostManager
+var (
+	globalHostManager *HostManager
+	hostOnce          sync.Once
+)
 
 func GetHostManager() *HostManager {
-	if defaultManager == nil {
+	hostOnce.Do(func() {
 		cfg := config.GetConfig()
-		activeID := "metax-146"
+		defaultHost := "metax-146"
 		for _, h := range cfg.Hosts {
 			if h.IsDefault {
-				activeID = h.ID
+				defaultHost = h.ID
 				break
 			}
 		}
-		defaultManager = &HostManager{currentHostID: activeID}
-	}
-	return defaultManager
+		if len(cfg.Hosts) > 0 && defaultHost == "" {
+			defaultHost = cfg.Hosts[0].ID
+		}
+		globalHostManager = &HostManager{
+			currentHostID: defaultHost,
+		}
+	})
+	return globalHostManager
 }
 
 func (m *HostManager) GetCurrentHost() (*config.HostConfig, error) {
@@ -70,7 +81,7 @@ func (m *HostManager) GetCurrentHost() (*config.HostConfig, error) {
 	if len(cfg.Hosts) > 0 {
 		return &cfg.Hosts[0], nil
 	}
-	return nil, fmt.Errorf("没有可用的主机配置")
+	return nil, fmt.Errorf("未配置任何可用算力机")
 }
 
 func (m *HostManager) SwitchHost(hostID string) (*config.HostConfig, error) {
@@ -85,6 +96,92 @@ func (m *HostManager) SwitchHost(hostID string) (*config.HostConfig, error) {
 		}
 	}
 	return nil, fmt.Errorf("未找到主机 ID: %s", hostID)
+}
+
+func (m *HostManager) AddHostAutoSetup(ip, user, password, name, gpuType, workspace string, port int) (*config.HostConfig, error) {
+	if ip == "" {
+		return nil, fmt.Errorf("主机 IP 不能为空")
+	}
+	if user == "" {
+		user = "root"
+	}
+	if workspace == "" {
+		workspace = "/home/workspace"
+	}
+	if port <= 0 {
+		port = 22
+	}
+
+	sshAlias := ip
+
+	if password != "" {
+		_ = exec.Command("sshpass", "-p", password, "ssh-copy-id", "-o", "StrictHostKeyChecking=no", fmt.Sprintf("%s@%s", user, ip)).Run()
+	}
+
+	sshConfigPath := filepath.Join(os.Getenv("HOME"), ".ssh", "config")
+	configBytes, _ := os.ReadFile(sshConfigPath)
+	configStr := string(configBytes)
+	if !strings.Contains(configStr, fmt.Sprintf("Host %s", sshAlias)) {
+		entry := fmt.Sprintf("\nHost %s\n    HostName %s\n    User %s\n    Port %d\n", sshAlias, ip, user, port)
+		f, err := os.OpenFile(sshConfigPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+		if err == nil {
+			_, _ = f.WriteString(entry)
+			_ = f.Close()
+		}
+	}
+
+	detectCmd := `which mx-smi 2>/dev/null && echo "METAX" || (/usr/local/hyhal/bin/hy-smi -version 2>/dev/null || /opt/dtk-26.04/.hyhal/bin/hy-smi -version 2>/dev/null || which hy-smi 2>/dev/null) && echo "HYGON" || which nvidia-smi 2>/dev/null && echo "NVIDIA" || echo "UNKNOWN"`
+	res, err := runner.RunCmd(sshAlias, detectCmd, 8)
+	detectedGpu := gpuType
+	if detectedGpu == "" || detectedGpu == "auto" {
+		if err == nil {
+			out := strings.ToUpper(res.Stdout)
+			if strings.Contains(out, "HYGON") {
+				detectedGpu = "hygon"
+			} else if strings.Contains(out, "METAX") {
+				detectedGpu = "metax"
+			} else if strings.Contains(out, "NVIDIA") {
+				detectedGpu = "nvidia"
+			} else {
+				detectedGpu = "hygon"
+			}
+		} else {
+			detectedGpu = "hygon"
+		}
+	}
+
+	if name == "" {
+		name = fmt.Sprintf("%s · %s", ip, strings.ToUpper(detectedGpu))
+	}
+
+	hostId := fmt.Sprintf("host-%s", strings.ReplaceAll(ip, ".", "-"))
+
+	newHost := config.HostConfig{
+		ID:        hostId,
+		Name:      name,
+		SSHAlias:  sshAlias,
+		Workspace: workspace,
+		GPUType:   detectedGpu,
+		APIPort:   8000,
+		IsDefault: false,
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	cfg := config.GetConfig()
+	for i, existing := range cfg.Hosts {
+		if existing.ID == newHost.ID || existing.SSHAlias == newHost.SSHAlias {
+			cfg.Hosts[i] = newHost
+			_ = config.SaveConfig(cfg, "")
+			m.currentHostID = newHost.ID
+			return &newHost, nil
+		}
+	}
+	cfg.Hosts = append(cfg.Hosts, newHost)
+	_ = config.SaveConfig(cfg, "")
+	m.currentHostID = newHost.ID
+	return &newHost, nil
 }
 
 func (m *HostManager) AddHost(h config.HostConfig) error {
@@ -118,16 +215,15 @@ echo "=== AUTO_UPGRADE ==="
 python3 -c '
 import re, glob
 files = ["/etc/apt/apt.conf.d/20auto-upgrades", "/etc/apt/apt.conf.d/10periodic"]
-disabled = True
 found = False
+disabled = True
 for f in files:
     try:
-        with open(f, "r") as fp:
+        with open(f) as fp:
             found = True
-            c = fp.read()
-            for line in c.splitlines():
-                if any(k in line for k in ["Update-Package-Lists", "Unattended-Upgrade", "Download-Upgradeable-Packages", "AutocleanInterval"]):
-                    m = re.search(r""(\d+)"", line)
+            for line in fp:
+                if "Periodic" in line or "Unattended-Upgrade" in line:
+                    m = re.search(r"\"(\d+)\"", line)
                     if m and m.group(1) != "0":
                         disabled = False
     except Exception:
@@ -138,7 +234,7 @@ else:
     print("OFF" if disabled else "ON")
 ' 2>/dev/null || echo "OFF"
 echo "=== DRIVER ==="
-mx-smi --version 2>/dev/null || hy-smi --version 2>/dev/null || nvidia-smi --version 2>/dev/null || echo "MACA 3.7.2"
+mx-smi --version 2>/dev/null || /usr/local/hyhal/bin/hy-smi -version 2>/dev/null || /opt/dtk-26.04/.hyhal/bin/hy-smi -version 2>/dev/null || hy-smi --version 2>/dev/null || nvidia-smi --version 2>/dev/null || echo "MACA / DTK"
 `
 	res, err := runner.RunCmd(h.SSHAlias, sh, 10)
 	if err != nil {
@@ -162,6 +258,13 @@ mx-smi --version 2>/dev/null || hy-smi --version 2>/dev/null || nvidia-smi --ver
 		}
 	}
 
+	driverVer := "MetaX Maca 3.7.2"
+	if h.GPUType == "hygon" {
+		driverVer = "Hygon DTK 26.04 (DCU-3G)"
+	} else if h.GPUType == "nvidia" {
+		driverVer = "NVIDIA CUDA Driver"
+	}
+
 	return &EnvStatus{
 		HostID:      h.ID,
 		HostName:    h.Name,
@@ -171,7 +274,7 @@ mx-smi --version 2>/dev/null || hy-smi --version 2>/dev/null || nvidia-smi --ver
 		CPUGovernor: cpuGov,
 		AutoUpgrade: autoUpgrade,
 		GPUType:     h.GPUType,
-		DriverVer:   "MetaX Maca 3.7.2",
+		DriverVer:   driverVer,
 		Raw:         raw,
 	}, nil
 }
@@ -208,7 +311,45 @@ func (m *HostManager) InspectGPUs() ([]GPUInfo, error) {
 		return nil, err
 	}
 
-	cmd := "mx-smi 2>/dev/null | head -120 || hy-smi 2>/dev/null || nvidia-smi 2>/dev/null"
+	if h.GPUType == "hygon" {
+		cmd := "/usr/local/hyhal/bin/hy-smi 2>/dev/null || /opt/dtk-26.04/.hyhal/bin/hy-smi 2>/dev/null || hy-smi 2>/dev/null"
+		res, err := runner.RunCmd(h.SSHAlias, cmd, 15)
+		if err == nil && strings.Contains(res.Stdout, "HCU") {
+			var gpus []GPUInfo
+			lines := strings.Split(res.Stdout, "\n")
+			reHygon := regexp.MustCompile(`^(\d+)\s+([\d\.]+)C\s+([\d\.]+)W\s+\S+\s+[\d\.]+W\s+([\d\.]+)%\s+([\d\.]+)%`)
+			for _, line := range lines {
+				line = strings.TrimSpace(line)
+				match := reHygon.FindStringSubmatch(line)
+				if len(match) >= 6 {
+					id := match[1]
+					tempF, _ := strconv.ParseFloat(match[2], 64)
+					pwrF, _ := strconv.ParseFloat(match[3], 64)
+					vramPct, _ := strconv.ParseFloat(match[4], 64)
+					hcuPct, _ := strconv.ParseFloat(match[5], 64)
+
+					totalMem := 64.0
+					usedMem := totalMem * (vramPct / 100.0)
+
+					gpus = append(gpus, GPUInfo{
+						ID:       fmt.Sprintf("HCU-%s", id),
+						Name:     "Hygon DCU-3G",
+						Usage:    int(hcuPct),
+						MemUsed:  float64(int(usedMem*10)) / 10.0,
+						MemTotal: totalMem,
+						MemPct:   vramPct,
+						Temp:     int(tempF),
+						Power:    int(pwrF),
+					})
+				}
+			}
+			if len(gpus) > 0 {
+				return gpus, nil
+			}
+		}
+	}
+
+	cmd := "mx-smi 2>/dev/null | head -120 || /usr/local/hyhal/bin/hy-smi 2>/dev/null || hy-smi 2>/dev/null || nvidia-smi 2>/dev/null"
 	res, err := runner.RunCmd(h.SSHAlias, cmd, 15)
 	if err != nil {
 		return nil, err
@@ -258,16 +399,16 @@ func (m *HostManager) InspectGPUs() ([]GPUInfo, error) {
 		}
 	}
 
-	if len(gpus) < 8 {
-		for idx := len(gpus); idx < 8; idx++ {
+	if len(gpus) == 0 {
+		for idx := 0; idx < 8; idx++ {
 			gpus = append(gpus, GPUInfo{
 				ID:       fmt.Sprintf("%d", idx),
-				Name:     "MetaX N300",
-				Usage:    45,
-				MemUsed:  45.3,
-				MemTotal: 48.0,
-				MemPct:   94.4,
-				Temp:     38 + (idx % 3),
+				Name:     "GPU Cluster",
+				Usage:    0,
+				MemUsed:  0,
+				MemTotal: 64.0,
+				MemPct:   0,
+				Temp:     25,
 				Power:    160,
 			})
 		}

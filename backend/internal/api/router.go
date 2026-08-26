@@ -99,23 +99,50 @@ func switchHost(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "已切换主机", "current": cur})
 }
 
+type AddHostReq struct {
+	IP        string `json:"ip"`
+	User      string `json:"user"`
+	Password  string `json:"password"`
+	Name      string `json:"name"`
+	SSHAlias  string `json:"ssh_alias"`
+	Workspace string `json:"workspace"`
+	GPUType   string `json:"gpu_type"`
+	Port      int    `json:"port"`
+	ID        string `json:"id"`
+}
+
 func addHost(c *gin.Context) {
-	var req config.HostConfig
+	var req AddHostReq
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if req.Workspace == "" {
-		req.Workspace = "/home/workspace"
+	targetIP := req.IP
+	if targetIP == "" {
+		targetIP = req.SSHAlias
 	}
-	if req.GPUType == "" {
-		req.GPUType = "metax"
+	if targetIP == "" {
+		targetIP = req.ID
 	}
-	if err := host.GetHostManager().AddHost(req); err != nil {
+	if targetIP == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请提供有效的主机 IP 地址或 SSH 别名"})
+		return
+	}
+
+	newHost, err := host.GetHostManager().AddHostAutoSetup(
+		targetIP,
+		req.User,
+		req.Password,
+		req.Name,
+		req.GPUType,
+		req.Workspace,
+		req.Port,
+	)
+	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "添加主机成功", "host": req})
+	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("主机 %s (%s) 已成功添加并连接！", newHost.Name, newHost.SSHAlias), "host": newHost})
 }
 
 func getEnv(c *gin.Context) {

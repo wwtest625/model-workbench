@@ -30,28 +30,49 @@ export const Navbar: React.FC<NavbarProps> = ({
   showToast
 }) => {
   const [showAddModal, setShowAddModal] = useState(false)
-  const [newHost, setNewHost] = useState<Partial<HostConfig>>({
-    id: '',
+  const [addingLoading, setAddingLoading] = useState(false)
+  const [formData, setFormData] = useState({
+    ip: '',
+    user: 'root',
+    password: '',
     name: '',
-    ssh_alias: '',
     workspace: '/home/workspace',
-    gpu_type: 'metax',
-    api_port: 8000
+    gpu_type: 'auto',
+    port: 22
   })
 
-  const handleAddSubmit = (e: React.FormEvent) => {
+  const handleAddSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!newHost.id || !newHost.ssh_alias) return
-    onAddHost({
-      id: newHost.id,
-      name: newHost.name || newHost.id,
-      ssh_alias: newHost.ssh_alias,
-      workspace: newHost.workspace || '/home/workspace',
-      gpu_type: newHost.gpu_type || 'metax',
-      api_port: newHost.api_port || 8000,
-      is_default: false
-    })
-    setShowAddModal(false)
+    if (!formData.ip) return
+    setAddingLoading(true)
+    try {
+      const res = await fetch('/api/v1/hosts/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData)
+      })
+      const data = await res.json()
+      if (res.ok) {
+        if (showToast) showToast(data.message || '主机添加成功', 'success')
+        setShowAddModal(false)
+        setFormData({
+          ip: '',
+          user: 'root',
+          password: '',
+          name: '',
+          workspace: '/home/workspace',
+          gpu_type: 'auto',
+          port: 22
+        })
+        onRefresh()
+      } else {
+        if (showToast) showToast(data.error || '添加主机失败', 'error')
+      }
+    } catch (err: any) {
+      if (showToast) showToast(`添加失败: ${err.message}`, 'error')
+    } finally {
+      setAddingLoading(false)
+    }
   }
 
   const handleFixAutoUpgrade = () => {
@@ -101,14 +122,14 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
             <button
               onClick={() => setShowAddModal(true)}
-              className="p-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs border border-slate-700"
-              title="添加新服务器"
+              className="p-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs border border-slate-700 cursor-pointer"
+              title="添加新算力服务器"
             >
               <Plus className="w-4 h-4" />
             </button>
           </div>
           <p className="text-xs text-slate-400 font-mono mt-1">
-            {currentHost?.workspace || '/home/workspace'} · {envStatus?.driver_ver || 'MACA 集群'}
+            {currentHost?.workspace || '/home/workspace'} · {envStatus?.driver_ver || 'GPU 集群'}
           </p>
         </div>
       </div>
@@ -165,78 +186,120 @@ export const Navbar: React.FC<NavbarProps> = ({
 
       {/* 添加新服务器 Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 w-full max-w-md shadow-2xl">
-            <h3 className="font-bold text-sm text-slate-100 mb-4 flex items-center gap-2">
-              <Plus className="w-4 h-4 text-indigo-400" /> 添加新算力服务器 (模式自动复用)
-            </h3>
-            <form onSubmit={handleAddSubmit} className="space-y-3 text-xs">
-              <div>
-                <label className="block text-slate-400 mb-1">唯一标识 (ID)</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="例如: metax-148"
-                  value={newHost.id}
-                  onChange={(e) => setNewHost({ ...newHost, id: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-slate-200 focus:outline-none focus:border-indigo-500"
-                />
-              </div>
-              <div>
-                <label className="block text-slate-400 mb-1">显示名称</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="例如: 148 · 沐曦 8卡集群"
-                  value={newHost.name}
-                  onChange={(e) => setNewHost({ ...newHost, name: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-slate-200 focus:outline-none focus:border-indigo-500"
-                />
-              </div>
-              <div>
-                <label className="block text-slate-400 mb-1">SSH 别名 / IP</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="例如: 192.2.0.148"
-                  value={newHost.ssh_alias}
-                  onChange={(e) => setNewHost({ ...newHost, ssh_alias: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-slate-200 focus:outline-none focus:border-indigo-500 font-mono"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-slate-400 mb-1">GPU 类型</label>
-                  <select
-                    value={newHost.gpu_type}
-                    onChange={(e) => setNewHost({ ...newHost, gpu_type: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-slate-200 focus:outline-none"
-                  >
-                    <option value="metax">沐曦 MetaX (mx-smi)</option>
-                    <option value="hygon">海光 Hygon (hy-smi)</option>
-                    <option value="nvidia">NVIDIA (nvidia-smi)</option>
-                  </select>
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 w-full max-w-lg shadow-2xl text-slate-200">
+            <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-800">
+              <h3 className="font-bold text-base text-slate-100 flex items-center gap-2">
+                <Plus className="w-5 h-5 text-indigo-400" /> 添加新算力服务器 (支持密码一键打通免密)
+              </h3>
+            </div>
+
+            <form onSubmit={handleAddSubmit} className="space-y-4 text-xs">
+              <div className="grid grid-cols-3 gap-3">
+                <div className="col-span-2">
+                  <label className="block text-slate-400 mb-1 font-medium">
+                    主机 IP 地址 <span className="text-rose-400">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="例如: 192.7.9.55"
+                    value={formData.ip}
+                    onChange={(e) => setFormData({ ...formData, ip: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-slate-200 focus:outline-none focus:border-indigo-500 font-mono text-sm"
+                  />
                 </div>
                 <div>
-                  <label className="block text-slate-400 mb-1">默认 API 端口</label>
+                  <label className="block text-slate-400 mb-1 font-medium">SSH 端口</label>
                   <input
                     type="number"
-                    value={newHost.api_port}
-                    onChange={(e) => setNewHost({ ...newHost, api_port: parseInt(e.target.value) })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-slate-200 focus:outline-none font-mono"
+                    value={formData.port}
+                    onChange={(e) => setFormData({ ...formData, port: parseInt(e.target.value) || 22 })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-slate-200 focus:outline-none focus:border-indigo-500 font-mono text-sm"
                   />
                 </div>
               </div>
-              <div className="flex justify-end gap-2 pt-4 border-t border-slate-800">
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-400 mb-1 font-medium">SSH 用户名</label>
+                  <input
+                    type="text"
+                    required
+                    value={formData.user}
+                    onChange={(e) => setFormData({ ...formData, user: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-slate-200 focus:outline-none focus:border-indigo-500 font-mono text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-400 mb-1 font-medium">SSH 密码 (用于自动打通免密)</label>
+                  <input
+                    type="password"
+                    placeholder="例如: 123"
+                    value={formData.password}
+                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-slate-200 focus:outline-none focus:border-indigo-500 font-mono text-sm"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-400 mb-1 font-medium">显示名称 / 备注 (可选)</label>
+                <input
+                  type="text"
+                  placeholder="例如: 55 · 海光DCU (8卡)"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-slate-200 focus:outline-none focus:border-indigo-500 text-sm"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-400 mb-1 font-medium">GPU 架构类型</label>
+                  <select
+                    value={formData.gpu_type}
+                    onChange={(e) => setFormData({ ...formData, gpu_type: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-slate-200 focus:outline-none text-sm"
+                  >
+                    <option value="auto">自动探测 (推荐)</option>
+                    <option value="hygon">海光 Hygon DCU (hy-smi)</option>
+                    <option value="metax">沐曦 MetaX (mx-smi)</option>
+                    <option value="nvidia">NVIDIA GPU (nvidia-smi)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-slate-400 mb-1 font-medium">远程工作目录</label>
+                  <input
+                    type="text"
+                    value={formData.workspace}
+                    onChange={(e) => setFormData({ ...formData, workspace: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-slate-200 focus:outline-none font-mono text-sm"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
                 <button
                   type="button"
                   onClick={() => setShowAddModal(false)}
-                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs"
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-sm transition"
                 >
                   取消
                 </button>
-                <button type="submit" className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold">
-                  添加并连接
+                <button
+                  type="submit"
+                  disabled={addingLoading}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-lg text-sm font-medium shadow-sm transition flex items-center gap-2"
+                >
+                  {addingLoading ? (
+                    <>
+                      <RotateCw className="w-4 h-4 animate-spin" />
+                      <span>正在连接与打通...</span>
+                    </>
+                  ) : (
+                    <span>一键添加并连接</span>
+                  )}
                 </button>
               </div>
             </form>

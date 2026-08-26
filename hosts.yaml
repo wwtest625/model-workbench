@@ -7,3 +7,10 @@ hosts:
     gpu_type: "metax"
     api_port: 8000
     is_default: true
+  - id: "hygon-55"
+    name: "55 · 海光 8卡 DCU-3G (bw1100)"
+    ssh_alias: "192.7.9.55"
+    workspace: "/home/workspace"
+    gpu_type: "hygon"
+    api_port: 8000
+    is_default: false
