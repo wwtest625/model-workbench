@@ -49,7 +49,7 @@ hosts:
         script: "start_vllm_glm_4_32b_fp8.sh"
         image: "cr.metax-tech.com/public-ai-release/maca/modelzoo.llm.vllm:1.0.3-maca.ai3.7.0.107-torch2.8-py310-ubuntu22.04-amd64"
   - id: "hygon-55"
-    name: "55 · 海光深算三号 8卡 (bw1100)"
+    name: "55 · 海光 BW1100 (深算三号 8卡)"
     ssh_alias: "192.7.9.55"
     workspace: "/root/workspace"
     gpu_type: "hygon"

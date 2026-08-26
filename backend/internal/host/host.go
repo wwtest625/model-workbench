@@ -260,7 +260,7 @@ mx-smi --version 2>/dev/null || /usr/local/hyhal/bin/hy-smi -version 2>/dev/null
 
 	driverVer := "MetaX Maca 3.7.2"
 	if h.GPUType == "hygon" {
-		driverVer = "海光 DTK 26.04 (深算三号)"
+		driverVer = "海光 BW1100 · DTK 26.04"
 	} else if h.GPUType == "nvidia" {
 		driverVer = "NVIDIA CUDA Driver"
 	}
@@ -333,7 +333,7 @@ func (m *HostManager) InspectGPUs() ([]GPUInfo, error) {
 
 					gpus = append(gpus, GPUInfo{
 						ID:       fmt.Sprintf("HCU-%s", id),
-						Name:     "海光深算三号 (DCU-3)",
+						Name:     "海光 BW1100 (深算三号)",
 						Usage:    int(hcuPct),
 						MemUsed:  float64(int(usedMem*10)) / 10.0,
 						MemTotal: totalMem,
