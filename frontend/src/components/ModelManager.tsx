@@ -126,6 +126,32 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
   }
 
   const [isLogsMaximized, setIsLogsMaximized] = useState(false)
+  const [logsHeight, setLogsHeight] = useState(380)
+  const [isDragging, setIsDragging] = useState(false)
+
+  const handleStartResize = (e: React.MouseEvent) => {
+    e.preventDefault()
+    setIsDragging(true)
+    const startY = e.clientY
+    const startH = logsHeight
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      const delta = startY - moveEvent.clientY
+      const nextH = Math.min(Math.max(startH + delta, 160), window.innerHeight - 70)
+      setLogsHeight(nextH)
+      window.dispatchEvent(new Event('resize'))
+    }
+
+    const onMouseUp = () => {
+      setIsDragging(false)
+      window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('mouseup', onMouseUp)
+      window.dispatchEvent(new Event('resize'))
+    }
+
+    window.addEventListener('mousemove', onMouseMove)
+    window.addEventListener('mouseup', onMouseUp)
+  }
 
   return (
     <div className="space-y-4">
@@ -269,15 +295,27 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
         ))}
       </div>
 
-      {/* 底部浮动抽屉：容器实时日志 (不遮挡顶部 GPU 拓扑) */}
+      {/* 底部浮动抽屉：容器实时日志 (支持鼠标自由拉伸高度，不遮挡顶部 GPU 拓扑) */}
       {modal.show && modal.type === 'logs' && (
         <div
-          className={`fixed bottom-0 left-0 right-0 z-40 bg-slate-900 border-t-2 border-indigo-500 shadow-[0_-12px_45px_rgba(0,0,0,0.85)] flex flex-col transition-all duration-200 ${
-            isLogsMaximized ? 'h-[88vh]' : 'h-[46vh] min-h-[320px] max-h-[50vh]'
+          style={isLogsMaximized ? { height: '88vh' } : { height: `${logsHeight}px` }}
+          className={`fixed bottom-0 left-0 right-0 z-40 bg-slate-900 border-t-2 border-indigo-500/80 shadow-[0_-12px_45px_rgba(0,0,0,0.85)] flex flex-col transition-[height] ${
+            isDragging ? 'duration-0 select-none' : 'duration-150'
           }`}
         >
+          {/* 顶部可拖拽拉伸把手条 */}
+          {!isLogsMaximized && (
+            <div
+              onMouseDown={handleStartResize}
+              className="w-full h-2.5 cursor-row-resize hover:bg-indigo-500/30 flex items-center justify-center transition-colors group select-none -mt-1 relative z-50"
+              title="按住鼠标上下拖拽，自由调整日志窗口高度"
+            >
+              <div className="w-12 h-1 bg-slate-600 group-hover:bg-indigo-400 rounded-full transition-colors" />
+            </div>
+          )}
+
           {/* 抽屉头部 */}
-          <div className="px-5 py-2.5 border-b border-slate-800 bg-slate-950/80 flex items-center justify-between shrink-0">
+          <div className="px-5 py-2 border-b border-slate-800 bg-slate-950/80 flex items-center justify-between shrink-0">
             <div className="flex items-center gap-2.5">
               <ScrollText className="w-4 h-4 text-indigo-400" />
               <h3 className="font-semibold text-sm text-slate-100 flex items-center gap-2 font-mono">
@@ -289,9 +327,12 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
             </div>
             <div className="flex items-center gap-2">
               <button
-                onClick={() => setIsLogsMaximized(!isLogsMaximized)}
+                onClick={() => {
+                  setIsLogsMaximized(!isLogsMaximized)
+                  setTimeout(() => window.dispatchEvent(new Event('resize')), 200)
+                }}
                 className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition"
-                title={isLogsMaximized ? '还原窗口' : '最大化窗口'}
+                title={isLogsMaximized ? '还原高度' : '最大化窗口'}
               >
                 {isLogsMaximized ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
               </button>
