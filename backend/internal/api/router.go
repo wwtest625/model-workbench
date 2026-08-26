@@ -48,7 +48,8 @@ func SetupRouter() *gin.Engine {
 		// 模型服务与编排
 		v1.GET("/models", getModels)
 		v1.POST("/models/start", startModel)
-		v1.POST("/models/stop", stopModels)
+		v1.POST("/models/stop", stopSingleModel)
+		v1.POST("/models/stop-all", stopAllModels)
 		v1.GET("/models/script", getModelScript)
 		v1.POST("/models/script", saveModelScript)
 		v1.GET("/models/command", getModelCommand)
@@ -174,12 +175,32 @@ func startModel(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("模型 %s 启动指令已发送", req.Name)})
 }
 
-func stopModels(c *gin.Context) {
+type StopSingleReq struct {
+	Name          string `json:"name"`
+	ServiceName   string `json:"service_name"`
+	ContainerName string `json:"container_name"`
+}
+
+func stopSingleModel(c *gin.Context) {
+	var req StopSingleReq
+	_ = c.ShouldBindJSON(&req)
+	targetService := req.ServiceName
+	if targetService == "" {
+		targetService = req.Name
+	}
+	if err := model.GetModelManager().StopModel(targetService, req.ContainerName); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("已停止模型 %s 容器", req.Name)})
+}
+
+func stopAllModels(c *gin.Context) {
 	if err := model.GetModelManager().StopAllModels(); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "停止指令已发送"})
+	c.JSON(http.StatusOK, gin.H{"message": "已停止全部推理容器并释放 GPU 显存"})
 }
 
 func getModelScript(c *gin.Context) {

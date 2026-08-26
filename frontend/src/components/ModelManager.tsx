@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Play, Square, FileCode, Container, ScrollText, Copy, RotateCw, X, Power } from 'lucide-react'
+import { Play, Square, FileCode, Container, ScrollText, Copy, RotateCw, X, Power, Maximize2, Minimize2 } from 'lucide-react'
 import { ModelCard, ModalState } from '../types'
 import { CodeEditor } from './CodeEditor'
 import { LogTerminal } from './LogTerminal'
@@ -8,6 +8,7 @@ interface ModelManagerProps {
   models: ModelCard[]
   operatingModel: boolean
   onStartModel: (model: ModelCard) => void
+  onStopModel: (model: ModelCard) => void
   onStopAll: () => void
   showToast?: (msg: string, type: 'success' | 'error' | 'info') => void
 }
@@ -16,6 +17,7 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
   models,
   operatingModel,
   onStartModel,
+  onStopModel,
   onStopAll,
   showToast
 }) => {
@@ -28,6 +30,8 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
     loading: false
   })
   const [activeModel, setActiveModel] = useState<ModelCard | null>(null)
+
+  const runningCount = models.filter((m) => m.status === 'RUNNING').length
 
   const openScript = async (m: ModelCard) => {
     setActiveModel(m)
@@ -121,19 +125,31 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
     if (showToast) showToast('已复制到剪贴板', 'success')
   }
 
+  const [isLogsMaximized, setIsLogsMaximized] = useState(false)
+
   return (
     <div className="space-y-4">
-      {/* 顶部描述与一键停止 */}
-      <div className="flex items-center justify-between">
-        <p className="text-xs text-slate-400">
-          基于标准模式自动感知与编排管理（支持 <code className="text-indigo-300">start_*.sh</code> 及 <code className="text-indigo-300">docker-compose-models.yml</code>）：
-        </p>
+      {/* 顶部描述与全局一键停止 */}
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-900/60 p-3.5 rounded-xl border border-slate-800/80 text-xs">
+        <div className="flex items-center gap-3">
+          <span className="text-slate-400">
+            已配置服务: <span className="text-slate-200 font-bold font-mono">{models.length}</span>
+          </span>
+          <span className="text-slate-500">·</span>
+          <span className="text-slate-400">
+            运行中: <span className={`font-bold font-mono ${runningCount > 0 ? 'text-emerald-400' : 'text-slate-400'}`}>{runningCount}</span>
+          </span>
+        </div>
+
+        {/* 全局停止所有容器按钮 */}
         <button
           onClick={onStopAll}
-          className="px-3 py-1 bg-rose-950 text-rose-300 border border-rose-800/60 rounded text-xs hover:bg-rose-900 transition flex items-center gap-1"
+          disabled={runningCount === 0}
+          className="px-3 py-1.5 bg-rose-950/80 hover:bg-rose-900 disabled:opacity-40 disabled:hover:bg-rose-950/80 text-rose-300 border border-rose-800/60 rounded-lg text-xs transition flex items-center gap-1.5 font-medium cursor-pointer disabled:cursor-not-allowed"
+          title="停止当前主机上所有运行中的大模型容器"
         >
-          <Power className="w-3.5 h-3.5" />
-          <span>停止全部推理服务</span>
+          <Power className="w-3.5 h-3.5 text-rose-400" />
+          <span>停止所有容器</span>
         </button>
       </div>
 
@@ -230,7 +246,7 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
               </div>
             </div>
 
-            {/* 操作按钮 */}
+            {/* 操作按钮 (单容器独立启停) */}
             <div className="flex items-center gap-2 pt-2.5 border-t border-slate-800/80">
               {m.status !== 'RUNNING' ? (
                 <button
@@ -242,7 +258,7 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
                 </button>
               ) : (
                 <button
-                  onClick={onStopAll}
+                  onClick={() => onStopModel(m)}
                   className="flex-1 py-2 bg-rose-600/20 hover:bg-rose-600/30 border border-rose-600/40 text-rose-300 rounded text-sm font-medium flex items-center justify-center gap-2 transition"
                 >
                   <Square className="w-3.5 h-3.5" /> 停止服务
@@ -253,8 +269,55 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
         ))}
       </div>
 
-      {/* 弹窗 Modal */}
-      {modal.show && (
+      {/* 底部浮动抽屉：容器实时日志 (不遮挡顶部 GPU 拓扑) */}
+      {modal.show && modal.type === 'logs' && (
+        <div
+          className={`fixed bottom-0 left-0 right-0 z-40 bg-slate-900 border-t-2 border-indigo-500 shadow-[0_-12px_45px_rgba(0,0,0,0.85)] flex flex-col transition-all duration-200 ${
+            isLogsMaximized ? 'h-[88vh]' : 'h-[46vh] min-h-[320px] max-h-[50vh]'
+          }`}
+        >
+          {/* 抽屉头部 */}
+          <div className="px-5 py-2.5 border-b border-slate-800 bg-slate-950/80 flex items-center justify-between shrink-0">
+            <div className="flex items-center gap-2.5">
+              <ScrollText className="w-4 h-4 text-indigo-400" />
+              <h3 className="font-semibold text-sm text-slate-100 flex items-center gap-2 font-mono">
+                <span>容器实时日志</span>
+                <span className="text-xs px-2 py-0.5 rounded bg-slate-800 text-indigo-300 border border-slate-700">
+                  {modal.modelName}
+                </span>
+              </h3>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setIsLogsMaximized(!isLogsMaximized)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition"
+                title={isLogsMaximized ? '还原窗口' : '最大化窗口'}
+              >
+                {isLogsMaximized ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+              </button>
+              <button
+                onClick={() => setModal((prev) => ({ ...prev, show: false }))}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition"
+                title="关闭日志抽屉"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* 抽屉内容主体 (LogTerminal) */}
+          <div className="flex-1 overflow-hidden bg-slate-950">
+            <LogTerminal
+              modelName={modal.modelName}
+              initialLogs={modal.content}
+              isOpen={modal.show}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* 居中弹窗 Modal：用于脚本源码编辑与 Compose 预览 */}
+      {modal.show && modal.type !== 'logs' && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-5xl h-[85vh] flex flex-col shadow-2xl overflow-hidden">
             {/* 弹窗头部 */}
@@ -272,7 +335,7 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
                     <Copy className="w-3 h-3" /> 复制内容
                   </button>
                 )}
-                <button onClick={() => setModal(prev => ({ ...prev, show: false }))} className="text-slate-400 hover:text-slate-200">
+                <button onClick={() => setModal((prev) => ({ ...prev, show: false }))} className="text-slate-400 hover:text-slate-200">
                   <X className="w-4 h-4" />
                 </button>
               </div>
@@ -288,12 +351,6 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
                     onSave={handleSaveScript}
                   />
                 </div>
-              ) : modal.type === 'logs' ? (
-                <LogTerminal
-                  modelName={modal.modelName}
-                  initialLogs={modal.content}
-                  isOpen={modal.show}
-                />
               ) : (
                 <div className="p-4 h-full">
                   <div className="p-4 overflow-y-auto font-mono text-xs text-slate-300 bg-black rounded-lg h-full leading-relaxed whitespace-pre-wrap select-text">

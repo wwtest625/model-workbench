@@ -179,7 +179,36 @@ export default function App() {
     })
   }
 
-  // 停止全部服务确认 (危险级别)
+  // 停止单容器服务确认
+  const handleStopModel = (m: ModelCard) => {
+    openConfirm({
+      title: '停止模型服务确认',
+      message: '确定要停止【' + m.name + '】服务吗？',
+      detail: '将仅停止该模型容器（' + (m.service_name || m.name) + '），不影响其他运行中的模型。',
+      confirmText: '确认停止',
+      type: 'warning',
+      onConfirm: async () => {
+        showToast('正在停止【' + m.name + '】服务...', 'info')
+        try {
+          await fetch('/api/v1/models/stop', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name: m.name,
+              service_name: m.service_name,
+              container_name: m.container_name
+            })
+          })
+          showToast('【' + m.name + '】停止指令已执行', 'success')
+          setTimeout(fetchModels, 1500)
+        } catch (e: any) {
+          showToast('停止失败: ' + e.message, 'error')
+        }
+      }
+    })
+  }
+
+  // 停止全部服务确认 (高危操作)
   const handleStopAll = () => {
     openConfirm({
       title: '停止所有服务警告',
@@ -191,8 +220,8 @@ export default function App() {
       onConfirm: async () => {
         showToast('正在停止所有运行中的服务...', 'info')
         try {
-          await fetch('/api/v1/models/stop', { method: 'POST' })
-          showToast('所有服务停止指令已执行', 'success')
+          await fetch('/api/v1/models/stop-all', { method: 'POST' })
+          showToast('所有服务停止指令已执行，显存已释放', 'success')
           setTimeout(fetchModels, 1500)
         } catch (e: any) {
           showToast('停止失败: ' + e.message, 'error')
@@ -326,6 +355,7 @@ export default function App() {
             models={models}
             operatingModel={operatingModel}
             onStartModel={handleStartModel}
+            onStopModel={handleStopModel}
             onStopAll={handleStopAll}
             showToast={showToast}
           />

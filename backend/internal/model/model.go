@@ -289,6 +289,21 @@ cd %s && docker compose -f docker-compose-models.yml up -d --force-recreate %s
 	return err
 }
 
+func (m *ModelManager) StopModel(serviceName string, containerName string) error {
+	h, err := host.GetHostManager().GetCurrentHost()
+	if err != nil {
+		return err
+	}
+	cmd := fmt.Sprintf(`
+cd %s && docker compose -f docker-compose-models.yml stop %s 2>/dev/null || true
+if [ -n "%s" ]; then
+    docker stop %s 2>/dev/null || true
+fi
+`, h.Workspace, serviceName, containerName, containerName)
+	_, err = runner.RunCmd(h.SSHAlias, cmd, 20)
+	return err
+}
+
 func (m *ModelManager) StopAllModels() error {
 	h, err := host.GetHostManager().GetCurrentHost()
 	if err != nil {
