@@ -2,22 +2,30 @@ import React, { useState, useEffect, useRef } from 'react'
 import { Play, Flame, Terminal } from 'lucide-react'
 
 interface BenchmarkConsoleProps {
-  models: { name: string; port: number }[]
-  consoleLogs: string[]
+  models?: { name: string; port: number }[]
+  consoleLogs?: string[]
   benchRunning: boolean
   onStartBenchmark: (model: string, dataset: string, concurrency: string) => void
+  onClearLogs?: () => void
 }
 
 export const BenchmarkConsole: React.FC<BenchmarkConsoleProps> = ({
-  models,
-  consoleLogs,
+  models = [],
+  consoleLogs = [],
   benchRunning,
-  onStartBenchmark
+  onStartBenchmark,
+  onClearLogs
 }) => {
-  const [model, setModel] = useState('Qwen3.8-27B')
+  const [model, setModel] = useState(models[0]?.name || 'Qwen3.8-27B')
   const [dataset, setDataset] = useState('short')
   const [concurrency, setConcurrency] = useState('1, 2, 4, 8, 16, 32, 64, 128, 256')
   const consoleRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (models.length > 0 && !models.some((m) => m.name === model)) {
+      setModel(models[0].name)
+    }
+  }, [models])
 
   useEffect(() => {
     if (consoleRef.current) {

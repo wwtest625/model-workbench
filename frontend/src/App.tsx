@@ -367,6 +367,7 @@ export default function App() {
 
         {currentTab === 'benchmark' && (
           <BenchmarkConsole
+            models={models}
             benchRunning={benchRunning}
             consoleLogs={consoleLogs}
             onStartBenchmark={handleStartBenchmark}
@@ -374,7 +375,9 @@ export default function App() {
           />
         )}
 
-        {currentTab === 'playground' && <Playground />}
+        {currentTab === 'playground' && (
+          <Playground currentHostName={currentHost?.name} apiPort={currentHost?.api_port || 8000} />
+        )}
 
         {currentTab === 'logs' && <LogArchive logs={logFiles} onRefresh={fetchLogs} />}
       </main>
