@@ -456,17 +456,17 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
                 filteredStandby.map((m) => (
                   <div
                     key={m.name}
-                    className="bg-slate-950/90 border border-slate-800/90 hover:border-indigo-500/50 rounded-xl p-3 flex flex-col justify-between gap-2.5 transition shadow-sm group"
+                    className="bg-slate-950/90 border border-slate-800/90 hover:border-slate-700 rounded-xl p-3 flex flex-col justify-between gap-2.5 transition shadow-sm group"
                   >
-                    {/* 长方块上方：名称与引擎 */}
+                    {/* 长方块上方：名称、引擎与紧凑启动按钮 */}
                     <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
+                      <div className="min-w-0 flex-1">
                         <div className="font-bold text-xs text-slate-200 group-hover:text-white truncate" title={m.name}>
                           {m.name}
                         </div>
                         <div className="flex items-center gap-2 mt-1 text-[11px] text-slate-400 font-mono">
                           <span
-                            className={`px-1.5 py-0.2 rounded ${
+                            className={`px-1.5 py-0.2 rounded font-medium ${
                               m.engine === 'vLLM'
                                 ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
                                 : 'bg-purple-500/10 text-purple-400 border border-purple-500/20'
@@ -480,29 +480,35 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
                         </div>
                       </div>
 
-                      {/* 右上状态小圆点 */}
-                      <span className="w-2 h-2 rounded-full bg-slate-600 mt-1 shrink-0" title="已停止" />
-                    </div>
-
-                    {/* 长方块下方：快捷查看脚本与启动按钮 */}
-                    <div className="flex items-center gap-2 pt-2 border-t border-slate-900">
-                      <button
-                        onClick={() => openScript(m)}
-                        className="py-1 px-2 bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 rounded text-[11px] border border-slate-800 flex items-center gap-1 transition"
-                        title="查看脚本源码"
-                      >
-                        <FileCode className="w-3 h-3" />
-                        <span>脚本</span>
-                      </button>
-
+                      {/* 右上紧凑启动小按钮 */}
                       <button
                         onClick={() => onStartModel(m)}
                         disabled={operatingModel}
-                        className="flex-1 py-1 px-2.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 rounded text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer"
-                        title="立即在后台启动该模型"
+                        className="shrink-0 py-1 px-2.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 rounded-lg text-xs font-semibold flex items-center gap-1 transition cursor-pointer"
+                        title="启动此模型容器服务"
                       >
                         <Play className="w-3 h-3 text-emerald-400 fill-emerald-400" />
-                        <span>启动服务</span>
+                        <span>启动</span>
+                      </button>
+                    </div>
+
+                    {/* 长方块下方：脚本源码与 Compose 编排透视按钮 */}
+                    <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-900 text-[11px]">
+                      <button
+                        onClick={() => openScript(m)}
+                        className="py-1 px-2 bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 rounded border border-slate-800 flex items-center justify-center gap-1 transition font-mono"
+                        title="查看脚本源码"
+                      >
+                        <FileCode className="w-3 h-3 text-slate-500" />
+                        <span>脚本源码</span>
+                      </button>
+                      <button
+                        onClick={() => openCompose(m)}
+                        className="py-1 px-2 bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 rounded border border-slate-800 flex items-center justify-center gap-1 transition font-mono"
+                        title="查看容器 Compose 编排"
+                      >
+                        <Container className="w-3 h-3 text-slate-500" />
+                        <span>Compose</span>
                       </button>
                     </div>
                   </div>
