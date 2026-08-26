@@ -8,14 +8,26 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+type ModelPreset struct {
+	Name          string `json:"name" yaml:"name"`
+	ServiceName   string `json:"service_name" yaml:"service_name"`
+	ContainerName string `json:"container_name" yaml:"container_name"`
+	Engine        string `json:"engine" yaml:"engine"`
+	TP            int    `json:"tp" yaml:"tp"`
+	Port          int    `json:"port" yaml:"port"`
+	Script        string `json:"script" yaml:"script"`
+	Image         string `json:"image" yaml:"image"`
+}
+
 type HostConfig struct {
-	ID        string `json:"id" yaml:"id"`
-	Name      string `json:"name" yaml:"name"`
-	SSHAlias  string `json:"ssh_alias" yaml:"ssh_alias"`
-	Workspace string `json:"workspace" yaml:"workspace"`
-	GPUType   string `json:"gpu_type" yaml:"gpu_type"` // metax, hygon, nvidia
-	APIPort   int    `json:"api_port" yaml:"api_port"`
-	IsDefault bool   `json:"is_default" yaml:"is_default"`
+	ID        string        `json:"id" yaml:"id"`
+	Name      string        `json:"name" yaml:"name"`
+	SSHAlias  string        `json:"ssh_alias" yaml:"ssh_alias"`
+	Workspace string        `json:"workspace" yaml:"workspace"`
+	GPUType   string        `json:"gpu_type" yaml:"gpu_type"` // metax, hygon, nvidia
+	APIPort   int           `json:"api_port" yaml:"api_port"`
+	IsDefault bool          `json:"is_default" yaml:"is_default"`
+	Models    []ModelPreset `json:"models,omitempty" yaml:"models,omitempty"`
 }
 
 type Config struct {

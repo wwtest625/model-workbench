@@ -7,10 +7,76 @@ hosts:
     gpu_type: "metax"
     api_port: 8000
     is_default: true
+    models:
+      - name: "Qwen3.8-27B"
+        service_name: "vllm-qwen3-8-27b"
+        container_name: "vllm-qwen3-8-27b"
+        engine: "vLLM"
+        tp: 8
+        port: 8000
+        script: "start_vllm_qwen3_8_27b.sh"
+        image: "cr.metax-tech.com/public-ai-release/maca/modelzoo.llm.vllm:1.0.3-maca.ai3.7.0.107-torch2.8-py310-ubuntu22.04-amd64"
+      - name: "DeepSeek-V4-Flash-W8A8"
+        service_name: "vllm-deepseek-v4-0731-w8a8"
+        container_name: "vllm-deepseek-v4-0731-w8a8"
+        engine: "vLLM"
+        tp: 4
+        port: 8000
+        script: "start_vllm_deepseek_v4_0731_w8a8.sh"
+        image: "cr.metax-tech.com/public-ai-release/maca/modelzoo.llm.vllm:1.0.3-maca.ai3.7.0.107-torch2.8-py310-ubuntu22.04-amd64"
+      - name: "MiniMax-M2.5-W8A8"
+        service_name: "vllm-minimax-m2-5-w8a8"
+        container_name: "vllm-minimax-m2-5-w8a8"
+        engine: "vLLM"
+        tp: 4
+        port: 8000
+        script: "start_vllm_minimax_m2_5_w8a8.sh"
+        image: "cr.metax-tech.com/public-ai-release/maca/modelzoo.llm.vllm:1.0.3-maca.ai3.7.0.107-torch2.8-py310-ubuntu22.04-amd64"
+      - name: "GLM-4.5-Air-W8A8"
+        service_name: "vllm-glm-4-5-air-w8a8"
+        container_name: "vllm-glm-4-5-air-w8a8"
+        engine: "vLLM"
+        tp: 4
+        port: 8000
+        script: "start_vllm_glm_4_5_air_w8a8.sh"
+        image: "cr.metax-tech.com/public-ai-release/maca/modelzoo.llm.vllm:1.0.3-maca.ai3.7.0.107-torch2.8-py310-ubuntu22.04-amd64"
+      - name: "GLM-4-32B-FP8"
+        service_name: "vllm-glm-4-32b-fp8"
+        container_name: "vllm-glm-4-32b-fp8"
+        engine: "vLLM"
+        tp: 4
+        port: 8000
+        script: "start_vllm_glm_4_32b_fp8.sh"
+        image: "cr.metax-tech.com/public-ai-release/maca/modelzoo.llm.vllm:1.0.3-maca.ai3.7.0.107-torch2.8-py310-ubuntu22.04-amd64"
   - id: "hygon-55"
     name: "55 · 海光 8卡 DCU-3G (bw1100)"
     ssh_alias: "192.7.9.55"
-    workspace: "/home/workspace"
+    workspace: "/root/workspace"
     gpu_type: "hygon"
     api_port: 8000
     is_default: false
+    models:
+      - name: "GLM5-vLLM (DTK 26.04)"
+        service_name: "GLM5-vllm_0.18.0"
+        container_name: "GLM5-vllm_0.18.0"
+        engine: "vLLM"
+        tp: 8
+        port: 8000
+        script: "start_glm5_vllm.sh"
+        image: "42.228.13.241:5000/jenkins/model_test_env/vllm:0.18.1-ubuntu22.04-dtk2604-py3.10-20260723-0240"
+      - name: "DeepSeek-V4-Flash (SGLang)"
+        service_name: "caoh_deepseekv4_flash"
+        container_name: "caoh_deepseekv4_flash"
+        engine: "SGLang"
+        tp: 8
+        port: 8000
+        script: "start_deepseekv4_sglang.sh"
+        image: "42.228.13.241:5000/jenkins/model_test_env/sglang:0.5.12-ubuntu22.04-dtk2604-py3.10-20260807-0006"
+      - name: "GLM5-SGLang (0.5.12)"
+        service_name: "GLM5_sglang0.5.12"
+        container_name: "GLM5_sglang0.5.12"
+        engine: "SGLang"
+        tp: 8
+        port: 8000
+        script: "start_glm5_sglang.sh"
+        image: "42.228.13.241:5000/jenkins/model_test_env/sglang:0.5.12-ubuntu22.04-dtk2604-py3.10-20260807-0006"
