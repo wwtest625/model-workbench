@@ -1,4 +1,4 @@
-# 🚀 MetaX 算力与大模型工程工作台 (MetaX Workbench)
+# 🚀 Model-Workbench · 大模型算力与工程工作台
 
 <p align="center">
   <b>专为国产 GPU（沐曦 MetaX / 海光 Hygon 等）打造的算力运维、容器编排、性能常规巡检与基准对比全栈平台</b>

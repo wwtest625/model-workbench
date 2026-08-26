@@ -52,7 +52,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="font-bold text-base text-white tracking-wide">MetaX 算力 & 模型工程工作台</h1>
+            <h1 className="font-bold text-base text-white tracking-wide">Model-Workbench 大模型工程工作台</h1>
             {/* 主机下拉切换选择器 */}
             <div className="relative">
               <select
