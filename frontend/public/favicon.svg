@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="100%" height="100%">
+  <defs>
+    <!-- 主背景深邃渐变 -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a" />
+      <stop offset="50%" stop-color="#020617" />
+      <stop offset="100%" stop-color="#090d16" />
+    </linearGradient>
+
+    <!-- 芯片边框高光渐变 -->
+    <linearGradient id="borderGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#818cf8" />
+      <stop offset="40%" stop-color="#06b6d4" />
+      <stop offset="100%" stop-color="#10b981" />
+    </linearGradient>
+
+    <!-- 核心能量多面体渐变 -->
+    <linearGradient id="coreGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6366f1" />
+      <stop offset="50%" stop-color="#3b82f6" />
+      <stop offset="100%" stop-color="#06b6d4" />
+    </linearGradient>
+
+    <!-- 柔和发光滤镜 -->
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="3" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- 芯片基座外壳 (圆角矩形带微发光) -->
+  <rect x="6" y="6" width="116" height="116" rx="28" fill="url(#bgGrad)" stroke="url(#borderGrad)" stroke-width="5" />
+
+  <!-- 芯片四角算力阵列针脚与触点 -->
+  <circle cx="24" cy="24" r="4" fill="#6366f1" opacity="0.9" />
+  <circle cx="104" cy="24" r="4" fill="#06b6d4" opacity="0.9" />
+  <circle cx="24" cy="104" r="4" fill="#3b82f6" opacity="0.9" />
+  <circle cx="104" cy="104" r="4" fill="#10b981" opacity="0.9" />
+
+  <!-- 算力微线路 -->
+  <path d="M24 24 L38 38 M104 24 L90 38 M24 104 L38 90 M104 104 L90 90" stroke="#334155" stroke-width="2.5" stroke-linecap="round" />
+
+  <!-- MetaX 核心矩阵 / 动态 M & X 几何能量拓扑 (立体多面体) -->
+  <g filter="url(#glow)">
+    <!-- M 与 X 几何拓扑骨干 -->
+    <path d="M34 92 L34 38 L54 66 L64 52 L64 92" fill="none" stroke="url(#coreGrad)" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" />
+    <path d="M94 92 L94 38 L74 66 L64 52" fill="none" stroke="url(#borderGrad)" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" />
+
+    <!-- 核心光子聚焦点 (中央能量核) -->
+    <polygon points="64,38 76,54 64,70 52,54" fill="#38bdf8" opacity="0.95" />
+    <circle cx="64" cy="54" r="3.5" fill="#ffffff" />
+  </g>
+
+  <!-- 底部微芯片状态发光条 -->
+  <rect x="40" y="104" width="48" height="5" rx="2.5" fill="url(#borderGrad)" />
+</svg>

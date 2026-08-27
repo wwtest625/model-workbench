@@ -2,7 +2,9 @@ package model
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"log"
 	"path/filepath"
 	"strings"
 
@@ -19,7 +21,10 @@ type ModelCard struct {
 	Port          int    `json:"port"`
 	Script        string `json:"script"`
 	Image         string `json:"image"`
-	Status        string `json:"status"` // RUNNING / STOPPED
+	Status        string `json:"status"` // READY, WARMING_UP, LOADING_WEIGHTS, INIT, FAILED, STOPPED
+	StatusDetail  string `json:"status_detail,omitempty"`
+	PingMs        int64  `json:"ping_ms,omitempty"`
+	Uptime        string `json:"uptime,omitempty"`
 	PID           string `json:"pid"`
 }
 
@@ -32,6 +37,14 @@ func GetModelManager() *ModelManager {
 		defaultModelManager = &ModelManager{}
 	}
 	return defaultModelManager
+}
+
+type smartProbeItem struct {
+	Name    string `json:"name"`
+	Status  string `json:"status"`
+	Detail  string `json:"detail"`
+	PingMs  int64  `json:"ping_ms"`
+	Uptime  string `json:"uptime"`
 }
 
 func (m *ModelManager) DiscoverModels() ([]ModelCard, string, error) {
@@ -56,6 +69,84 @@ if [ -n "$PID" ]; then
     tr '\0' ' ' < /proc/$PID/cmdline 2>/dev/null
 fi
 echo
+echo "=== SMART_PROBE ==="
+python3 -c '
+import subprocess, json, re, time, urllib.request
+
+containers = {}
+try:
+    ps_out = subprocess.check_output(["docker", "ps", "-a", "--format", "{{.Names}}|||{{.Status}}"], text=True)
+    for line in ps_out.strip().split("\n"):
+        if not line.strip() or "|||" not in line:
+            continue
+        name, status_str = line.strip().split("|||", 1)
+        name_lower = name.lower()
+        is_up = status_str.lower().startswith("up")
+        
+        info = {
+            "name": name,
+            "status": "STOPPED",
+            "detail": "",
+            "ping_ms": 0,
+            "uptime": status_str
+        }
+        
+        if is_up:
+            ports = [8000, 8001, 8002, 30000, 30010]
+            is_ready = False
+            for p in ports:
+                t0 = time.time()
+                try:
+                    req = urllib.request.Request(f"http://127.0.0.1:{p}/v1/models", headers={"User-Agent": "Probe"})
+                    with urllib.request.urlopen(req, timeout=0.6) as resp:
+                        if resp.status == 200:
+                            latency = int((time.time() - t0) * 1000)
+                            info["status"] = "READY"
+                            info["detail"] = f"服务正常提供推理 (端口 {p})"
+                            info["ping_ms"] = latency
+                            is_ready = True
+                            break
+                except Exception:
+                    pass
+            
+            if not is_ready:
+                try:
+                    logs = subprocess.check_output(["docker", "logs", "--tail", "35", name], text=True, stderr=subprocess.STDOUT)
+                    if re.search(r"(CUDA out of memory|OutOfMemoryError|Killed|Segmentation fault|Fatal error|RuntimeError: CUDA)", logs, re.I):
+                        m_err = re.search(r"(CUDA out of memory[^\n]*|OutOfMemoryError[^\n]*|RuntimeError:[^\n]*)", logs)
+                        err_msg = m_err.group(1)[:80] if m_err else "显存溢出 (OOM) 或运行时崩溃"
+                        info["status"] = "FAILED"
+                        info["detail"] = err_msg
+                    elif re.search(r"(Capturing CUDA graph|Profiling KV cache|Allocating.*for KV cache|warmup|Capturing graph)", logs, re.I):
+                        info["status"] = "WARMING_UP"
+                        info["detail"] = "KV Cache 分配与计算图预热中 (即将就绪)"
+                    elif re.search(r"(Loading model weights|safetensors|Loading checkpoint shards|Loading safetensors)", logs, re.I):
+                        info["status"] = "LOADING_WEIGHTS"
+                        m_shards = re.search(r"(\d+/\d+|\d+%)", logs)
+                        progress = f" ({m_shards.group(1)})" if m_shards else ""
+                        info["detail"] = f"正在载入多卡权重切片{progress}..."
+                    else:
+                        info["status"] = "INIT"
+                        info["detail"] = "初始化运行环境与通信拓扑中..."
+                except Exception as e:
+                    info["status"] = "INIT"
+                    info["detail"] = "容器已拉起，正在初始化..."
+        else:
+            if "exited (" in status_str.lower() and not "exited (0)" in status_str.lower():
+                try:
+                    logs = subprocess.check_output(["docker", "logs", "--tail", "20", name], text=True, stderr=subprocess.STDOUT)
+                    if "out of memory" in logs.lower():
+                        info["status"] = "FAILED"
+                        info["detail"] = "异常退出: 显存溢出 (OOM)"
+                except Exception:
+                    pass
+        
+        containers[name_lower] = info
+except Exception as e:
+    pass
+
+print(json.dumps(containers, ensure_ascii=False))
+' 2>/dev/null
 echo "=== SCRIPTS ==="
 find %s -maxdepth 2 -name "*.sh" -exec basename {} \; 2>/dev/null || true
 `, workspace)
@@ -66,6 +157,8 @@ find %s -maxdepth 2 -name "*.sh" -exec basename {} \; 2>/dev/null || true
 	}
 
 	raw := res.Stdout
+	raw = strings.ReplaceAll(raw, "\\n", "\n")
+	raw = strings.ReplaceAll(raw, "\r", "")
 
 	dockerLines := []string{}
 	if strings.Contains(raw, "=== DOCKER_PS ===") {
@@ -73,7 +166,12 @@ find %s -maxdepth 2 -name "*.sh" -exec basename {} \; 2>/dev/null || true
 		if len(parts) > 1 {
 			psBlock := strings.TrimSpace(strings.Split(parts[1], "=== RUNNING_PID ===")[0])
 			if psBlock != "" {
-				dockerLines = strings.Split(psBlock, "\n")
+				for _, line := range strings.Split(psBlock, "\n") {
+					line = strings.TrimSpace(line)
+					if line != "" {
+						dockerLines = append(dockerLines, line)
+					}
+				}
 			}
 		}
 	}
@@ -90,7 +188,25 @@ find %s -maxdepth 2 -name "*.sh" -exec basename {} \; 2>/dev/null || true
 	if strings.Contains(raw, "=== RUNNING_CMD ===") {
 		parts := strings.Split(raw, "=== RUNNING_CMD ===")
 		if len(parts) > 1 {
-			runningCmd = strings.TrimSpace(strings.Split(parts[1], "=== SCRIPTS ===")[0])
+			runningCmd = strings.TrimSpace(strings.Split(parts[1], "=== SMART_PROBE ===")[0])
+		}
+	}
+
+	probeMap := make(map[string]smartProbeItem)
+	if strings.Contains(raw, "=== SMART_PROBE ===") {
+		parts := strings.Split(raw, "=== SMART_PROBE ===")
+		if len(parts) > 1 {
+			jsonBlock := strings.TrimSpace(strings.Split(parts[1], "=== SCRIPTS ===")[0])
+			jsonBlock = strings.ReplaceAll(jsonBlock, "\\\"", "\"")
+			var rawProbe map[string]smartProbeItem
+			if err := json.Unmarshal([]byte(jsonBlock), &rawProbe); err == nil {
+				for k, v := range rawProbe {
+					cleanKey := strings.Trim(strings.ToLower(k), "\r\n\t\\ ")
+					probeMap[cleanKey] = v
+				}
+			} else {
+				log.Printf("[DiscoverModels] JSON unmarshal error: %v, block: %s", err, jsonBlock)
+			}
 		}
 	}
 
@@ -102,17 +218,19 @@ find %s -maxdepth 2 -name "*.sh" -exec basename {} \; 2>/dev/null || true
 	}
 	cMap := make(map[string]containerMeta)
 	for _, l := range dockerLines {
+		l = strings.Trim(l, "\r\n\t\\ ")
 		parts := strings.Split(l, "|||")
 		if len(parts) >= 3 {
-			cName := strings.TrimSpace(parts[0])
-			cImg := strings.TrimSpace(parts[1])
-			cStatus := strings.TrimSpace(parts[2])
+			cName := strings.Trim(parts[0], "\r\n\t\\ ")
+			cImg := strings.Trim(parts[1], "\r\n\t\\ ")
+			cStatus := strings.Trim(parts[2], "\r\n\t\\ ")
 			cPorts := ""
 			if len(parts) >= 4 {
-				cPorts = strings.TrimSpace(parts[3])
+				cPorts = strings.Trim(parts[3], "\r\n\t\\ ")
 			}
 			isUp := strings.HasPrefix(strings.ToLower(cStatus), "up")
-			cMap[strings.ToLower(cName)] = containerMeta{
+			cleanNameLower := strings.Trim(strings.ToLower(cName), "\r\n\t\\ ")
+			cMap[cleanNameLower] = containerMeta{
 				image: cImg,
 				isUp:  isUp,
 				ports: cPorts,
@@ -126,30 +244,41 @@ find %s -maxdepth 2 -name "*.sh" -exec basename {} \; 2>/dev/null || true
 	// 1. 优先根据当前主机专属预设 h.Models 加载
 	for _, preset := range h.Models {
 		status := "STOPPED"
+		statusDetail := ""
+		pingMs := int64(0)
+		uptime := ""
 		img := preset.Image
-		cNameLower := strings.ToLower(preset.ContainerName)
-		sNameLower := strings.ToLower(preset.ServiceName)
+		cNameLower := strings.Trim(strings.ToLower(preset.ContainerName), "\r\n\t\\ ")
+		sNameLower := strings.Trim(strings.ToLower(preset.ServiceName), "\r\n\t\\ ")
+
+		var matchedProbe *smartProbeItem
+		if p, ok := probeMap[cNameLower]; ok {
+			matchedProbe = &p
+		} else if p, ok := probeMap[sNameLower]; ok {
+			matchedProbe = &p
+		}
 
 		if meta, ok := cMap[cNameLower]; ok {
 			handledContainers[cNameLower] = true
-			if meta.isUp {
-				status = "RUNNING"
-			}
 			if meta.image != "" {
 				img = meta.image
 			}
 		} else if meta, ok := cMap[sNameLower]; ok {
 			handledContainers[sNameLower] = true
-			if meta.isUp {
-				status = "RUNNING"
-			}
 			if meta.image != "" {
 				img = meta.image
 			}
 		}
 
+		if matchedProbe != nil {
+			status = matchedProbe.Status
+			statusDetail = matchedProbe.Detail
+			pingMs = matchedProbe.PingMs
+			uptime = matchedProbe.Uptime
+		}
+
 		pid := ""
-		if status == "RUNNING" && runningPID != "" {
+		if status != "STOPPED" && runningPID != "" {
 			pid = runningPID
 		}
 
@@ -163,20 +292,23 @@ find %s -maxdepth 2 -name "*.sh" -exec basename {} \; 2>/dev/null || true
 			Script:        preset.Script,
 			Image:         img,
 			Status:        status,
+			StatusDetail:  statusDetail,
+			PingMs:        pingMs,
+			Uptime:        uptime,
 			PID:           pid,
 		})
 	}
 
 	// 2. 如果目标主机上有其他已运行或已存在的相关大模型容器，动态加入
 	for _, l := range dockerLines {
+		l = strings.Trim(l, "\r\n\t\\ ")
 		parts := strings.Split(l, "|||")
 		if len(parts) >= 3 {
-			cName := strings.TrimSpace(parts[0])
-			cImg := strings.TrimSpace(parts[1])
-			cStatus := strings.TrimSpace(parts[2])
-			cNameLower := strings.ToLower(cName)
+			cName := strings.Trim(parts[0], "\r\n\t\\ ")
+			cImg := strings.Trim(parts[1], "\r\n\t\\ ")
+			cNameLower := strings.Trim(strings.ToLower(cName), "\r\n\t\\ ")
 
-			if handledContainers[cNameLower] {
+			if cNameLower == "" || handledContainers[cNameLower] {
 				continue
 			}
 
@@ -193,8 +325,15 @@ find %s -maxdepth 2 -name "*.sh" -exec basename {} \; 2>/dev/null || true
 				}
 
 				status := "STOPPED"
-				if strings.HasPrefix(strings.ToLower(cStatus), "up") {
-					status = "RUNNING"
+				statusDetail := ""
+				pingMs := int64(0)
+				uptime := ""
+
+				if p, ok := probeMap[cNameLower]; ok {
+					status = p.Status
+					statusDetail = p.Detail
+					pingMs = p.PingMs
+					uptime = p.Uptime
 				}
 
 				tp := 8
@@ -205,7 +344,7 @@ find %s -maxdepth 2 -name "*.sh" -exec basename {} \; 2>/dev/null || true
 				script := fmt.Sprintf("start_%s.sh", strings.ToLower(cName))
 
 				pid := ""
-				if status == "RUNNING" && runningPID != "" {
+				if status != "STOPPED" && runningPID != "" {
 					pid = runningPID
 				}
 
@@ -219,11 +358,15 @@ find %s -maxdepth 2 -name "*.sh" -exec basename {} \; 2>/dev/null || true
 					Script:        script,
 					Image:         cImg,
 					Status:        status,
+					StatusDetail:  statusDetail,
+					PingMs:        pingMs,
+					Uptime:        uptime,
 					PID:           pid,
 				})
 			}
 		}
 	}
+
 
 	return result, runningCmd, nil
 }

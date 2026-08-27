@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/gin-contrib/cors"
@@ -32,6 +33,23 @@ func SetupRouter() *gin.Engine {
 		AllowCredentials: true,
 		MaxAge:           12 * time.Hour,
 	}))
+
+	// 动态字体流式服务（支持更纱黑体等外部大字体，无需打包进单二进制）
+	r.GET("/fonts/SarasaTermSCNerd.ttc", func(c *gin.Context) {
+		candidates := []string{
+			"/mnt/c/Users/sys49169/WorkBuddy/2026-08-27-10-32-42/fonts/sarasa-nerd/SarasaTermSCNerd.ttc",
+			"/root/fonts/SarasaTermSCNerd.ttc",
+		}
+		for _, p := range candidates {
+			if info, err := os.Stat(p); err == nil && !info.IsDir() {
+				c.Header("Cache-Control", "public, max-age=31536000, immutable")
+				c.Header("Content-Type", "font/collection")
+				c.File(p)
+				return
+			}
+		}
+		c.Status(http.StatusNotFound)
+	})
 
 	v1 := r.Group("/api/v1")
 	{
@@ -63,10 +81,15 @@ func SetupRouter() *gin.Engine {
 		// 模型试玩 (直接 HTTP 代理到当前主机)
 		v1.POST("/chat", chatCompletions)
 
-		// 模型资产检索与 ModelScope 下载中心
+		// 模型资产检索与 ModelScope 下载与分发中心
 		v1.GET("/hub/local", getHubLocalAssets)
 		v1.GET("/hub/search", searchHubModelScope)
 		v1.POST("/hub/start-download", startHubDownload)
+		v1.GET("/hub/download-tasks", getHubDownloadTasks)
+		v1.GET("/hub/download-log", getHubDownloadLog)
+		v1.POST("/hub/start-rsync", startHubRsync)
+		v1.GET("/hub/rsync-tasks", getHubRsyncTasks)
+		v1.GET("/hub/rsync-log", getHubRsyncLog)
 	}
 
 	return r
@@ -482,3 +505,76 @@ func startHubDownload(c *gin.Context) {
 		"pid":     pid,
 	})
 }
+
+func getHubDownloadTasks(c *gin.Context) {
+	tasks, err := hub.GetHubManager().GetDownloadTasks()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"tasks": tasks})
+}
+
+func getHubDownloadLog(c *gin.Context) {
+	dir := c.Query("dir")
+	if dir == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少 dir 参数"})
+		return
+	}
+	logs, err := hub.GetHubManager().GetDownloadLog(dir, 80)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"dir": dir, "logs": logs})
+}
+
+type StartRsyncReq struct {
+	ModelName    string `json:"model_name"`
+	SourceServer string `json:"source_server"`
+	SourcePath   string `json:"source_path" binding:"required"`
+	TargetServer string `json:"target_server"`
+	TargetPath   string `json:"target_path"`
+}
+
+func startHubRsync(c *gin.Context) {
+	var req StartRsyncReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	pid, err := hub.GetHubManager().StartRsyncTask(req.SourceServer, req.SourcePath, req.TargetServer, req.TargetPath, req.ModelName)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"message": fmt.Sprintf("已启动向算力节点的分发任务 (PID: %s)", pid),
+		"pid":     pid,
+	})
+}
+
+func getHubRsyncTasks(c *gin.Context) {
+	tasks, err := hub.GetHubManager().GetRsyncTasks()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"tasks": tasks})
+}
+
+func getHubRsyncLog(c *gin.Context) {
+	name := c.Query("name")
+	if name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少 name 参数"})
+		return
+	}
+	logs, err := hub.GetHubManager().GetRsyncLog(name, 80)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"name": name, "logs": logs})
+}
+
+

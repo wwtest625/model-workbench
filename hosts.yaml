@@ -48,6 +48,14 @@ hosts:
         port: 8000
         script: "start_vllm_glm_4_32b_fp8.sh"
         image: "cr.metax-tech.com/public-ai-release/maca/modelzoo.llm.vllm:1.0.3-maca.ai3.7.0.107-torch2.8-py310-ubuntu22.04-amd64"
+      - name: "Qwen3.8-Flash-Next"
+        service_name: "sglang-qwen3-8-flash-next"
+        container_name: "sglang-qwen3-8-flash-next"
+        engine: "SGLang"
+        tp: 8
+        port: 8000
+        script: "start_sglang_qwen3_8_flash_next.sh"
+        image: "cr.metax-tech.com/public-ai-release/maca/modelzoo.llm.sglang:1.0.3-maca.ai3.8.2.8-torch2.10-py312-ubuntu22.04-amd64"
   - id: "hygon-55"
     name: "55 · 海光 BW1100 (深算三号 8卡)"
     ssh_alias: "192.7.9.55"

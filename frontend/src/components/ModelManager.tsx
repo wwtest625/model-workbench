@@ -15,11 +15,14 @@ import {
   ChevronRight,
   Search,
   CheckCircle2,
-  Layers
+  Layers,
+  Activity,
+  AlertCircle,
+  Zap
 } from 'lucide-react'
 import { ModelCard, ModalState } from '../types'
 import { CodeEditor } from './CodeEditor'
-import { LogTerminal } from './LogTerminal'
+import { DockTerminalPanel, DockTab } from './DockTerminalPanel'
 
 interface ModelManagerProps {
   models: ModelCard[]
@@ -48,9 +51,13 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
   })
   const [activeModel, setActiveModel] = useState<ModelCard | null>(null)
 
-  // 状态切片 Tab: 运行中 (RUNNING) / 未启动 (STOPPED)
-  const runningModels = models.filter((m) => m.status === 'RUNNING')
-  const stoppedModels = models.filter((m) => m.status !== 'RUNNING')
+  // 状态切片 Tab: 运行中 (READY / WARMING_UP / LOADING_WEIGHTS / INIT / LOADING / RUNNING) / 未启动 (STOPPED / FAILED)
+  const isModelActive = (s: string) => s === 'READY' || s === 'WARMING_UP' || s === 'LOADING_WEIGHTS' || s === 'INIT' || s === 'LOADING' || s === 'RUNNING'
+  const runningModels = models.filter((m) => isModelActive(m.status))
+  const stoppedModels = models.filter((m) => !isModelActive(m.status))
+  const readyCount = models.filter((m) => m.status === 'READY').length
+  const loadingCount = models.filter((m) => m.status === 'WARMING_UP' || m.status === 'LOADING_WEIGHTS' || m.status === 'INIT' || m.status === 'LOADING').length
+  const failedCount = models.filter((m) => m.status === 'FAILED').length
 
   const [statusTab, setStatusTab] = useState<'RUNNING' | 'STOPPED'>('RUNNING')
   const [searchQuery, setSearchQuery] = useState('')
@@ -136,29 +143,45 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
     }
   }
 
-  const openLogs = async (m: ModelCard) => {
-    setActiveModel(m)
-    const targetName = m.container_name || m.service_name || m.name
-    setModal({
-      show: true,
-      type: 'logs',
-      title: `容器实时日志 (docker logs ${targetName} / 最近 300 行)`,
-      modelName: m.name,
-      content: '正在拉取容器实时日志流...',
-      loading: true
+  // VS Code 风格底部多容器 Dock 终端状态
+  const [dockTabs, setDockTabs] = useState<DockTab[]>([])
+  const [activeDockTabId, setActiveDockTabId] = useState<string>('')
+  const [isDockOpen, setIsDockOpen] = useState<boolean>(false)
+  const [dockPaddingBottom, setDockPaddingBottom] = useState<number>(0)
+  const [isScriptMaximized, setIsScriptMaximized] = useState(false)
+
+  const openLogs = (m: ModelCard) => {
+    const tabId = m.container_name || m.service_name || m.name
+    setDockTabs((prev) => {
+      if (prev.some((t) => t.id === tabId)) return prev
+      return [
+        ...prev,
+        {
+          id: tabId,
+          modelName: m.name,
+          containerName: m.container_name || m.service_name || m.name,
+          status: m.status
+        }
+      ]
     })
-    await fetchLogs(m)
+    setActiveDockTabId(tabId)
+    setIsDockOpen(true)
   }
 
-  const fetchLogs = async (m: ModelCard) => {
-    try {
-      const targetName = m.container_name || m.service_name || m.name
-      const res = await fetch(`/api/v1/models/logs?name=${encodeURIComponent(targetName)}`)
-      const data = await res.json()
-      setModal((prev) => ({ ...prev, content: data.logs || '(暂无日志输出)', loading: false }))
-    } catch (e: any) {
-      setModal((prev) => ({ ...prev, content: `拉取日志失败: ${e.message}`, loading: false }))
-    }
+  const handleCloseDockTab = (tabId: string) => {
+    setDockTabs((prev) => {
+      const next = prev.filter((t) => t.id !== tabId)
+      if (next.length === 0) {
+        setIsDockOpen(false)
+      } else if (activeDockTabId === tabId) {
+        setActiveDockTabId(next[next.length - 1].id)
+      }
+      return next
+    })
+  }
+
+  const handleAddDockTab = (m: ModelCard) => {
+    openLogs(m)
   }
 
   const handleCopy = () => {
@@ -166,35 +189,8 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
     if (showToast) showToast('已复制到剪贴板', 'success')
   }
 
-  const [isLogsMaximized, setIsLogsMaximized] = useState(false)
-  const [logsHeight, setLogsHeight] = useState(380)
-  const [isDragging, setIsDragging] = useState(false)
-
-  const handleStartResize = (e: React.MouseEvent) => {
-    e.preventDefault()
-    setIsDragging(true)
-    const startY = e.clientY
-    const startH = logsHeight
-
-    const onMouseMove = (moveEvent: MouseEvent) => {
-      const delta = startY - moveEvent.clientY
-      const nextH = Math.min(Math.max(startH + delta, 160), window.innerHeight - 70)
-      setLogsHeight(nextH)
-      window.dispatchEvent(new Event('resize'))
-    }
-
-    const onMouseUp = () => {
-      setIsDragging(false)
-      window.removeEventListener('mousemove', onMouseMove)
-      window.removeEventListener('mouseup', onMouseUp)
-    }
-
-    window.addEventListener('mousemove', onMouseMove)
-    window.addEventListener('mouseup', onMouseUp)
-  }
-
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" style={{ paddingBottom: isDockOpen ? `${dockPaddingBottom + 16}px` : undefined }}>
       {/* 方案 B：全景统一控制台导航与切片栏 */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-3.5 flex flex-wrap items-center justify-between gap-3.5 shadow-sm">
         {/* 左侧状态切片器：仅保留 [运行中] 与 [未启动] */}
@@ -208,7 +204,10 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
             }`}
           >
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span>运行中 ({runningModels.length})</span>
+            <span>
+              运行中 ({runningModels.length})
+              {loadingCount > 0 && <span className="ml-1 text-amber-400 text-[11px]">[{loadingCount} 加载中]</span>}
+            </span>
           </button>
 
           <button
@@ -220,7 +219,10 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
             }`}
           >
             <Layers className="w-3.5 h-3.5 text-slate-400" />
-            <span>未启动 ({stoppedModels.length})</span>
+            <span>
+              未启动 ({stoppedModels.length})
+              {failedCount > 0 && <span className="ml-1 text-rose-400 text-[11px]">[{failedCount} 异常]</span>}
+            </span>
           </button>
         </div>
 
@@ -275,7 +277,17 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
               return (
                 <div
                   key={m.name}
-                  className="bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-xl transition shadow-sm overflow-hidden"
+                  className={`bg-slate-900 border rounded-xl transition shadow-sm overflow-hidden ${
+                    m.status === 'READY'
+                      ? 'border-slate-800 hover:border-slate-700'
+                      : m.status === 'WARMING_UP'
+                      ? 'border-amber-700/70 bg-gradient-to-r from-slate-900 via-amber-950/10 to-slate-900'
+                      : m.status === 'LOADING_WEIGHTS'
+                      ? 'border-yellow-700/70 bg-gradient-to-r from-slate-900 via-yellow-950/10 to-slate-900'
+                      : m.status === 'INIT'
+                      ? 'border-blue-700/70 bg-gradient-to-r from-slate-900 via-blue-950/10 to-slate-900'
+                      : 'border-rose-700/70 bg-gradient-to-r from-slate-900 via-rose-950/15 to-slate-900'
+                  }`}
                 >
                   {/* 折叠标题横条 (点击切换折叠/展开) */}
                   <div
@@ -311,10 +323,40 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
                       <span className="text-xs font-mono text-slate-400 hidden sm:inline-block">
                         Port: <span className="text-slate-200 font-semibold">{m.port}</span>
                       </span>
-                      <span className="text-xs font-mono px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center gap-1.5">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                        <span>运行中</span>
-                      </span>
+
+                      {/* 5 阶生命周期状态徽章 */}
+                      {m.status === 'READY' ? (
+                        <span className="text-xs font-mono px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/40 flex items-center gap-1.5 font-medium">
+                          <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block" />
+                          <span>服务就绪</span>
+                          {m.ping_ms ? <span className="text-[10px] text-emerald-400 font-normal">({m.ping_ms}ms)</span> : null}
+                        </span>
+                      ) : m.status === 'WARMING_UP' ? (
+                        <span className="text-xs font-mono px-2.5 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/50 flex items-center gap-1.5 font-medium animate-pulse">
+                          <RotateCw className="w-3 h-3 animate-spin text-amber-400" />
+                          <span>图编译与预热中...</span>
+                        </span>
+                      ) : m.status === 'LOADING_WEIGHTS' ? (
+                        <span className="text-xs font-mono px-2.5 py-0.5 rounded-full bg-yellow-500/15 text-yellow-300 border border-yellow-500/50 flex items-center gap-1.5 font-medium animate-pulse">
+                          <RotateCw className="w-3 h-3 animate-spin text-yellow-400" />
+                          <span>权重载入中...</span>
+                        </span>
+                      ) : m.status === 'INIT' ? (
+                        <span className="text-xs font-mono px-2.5 py-0.5 rounded-full bg-blue-500/15 text-blue-300 border border-blue-500/40 flex items-center gap-1.5 font-medium animate-pulse">
+                          <RotateCw className="w-3 h-3 animate-spin text-blue-400" />
+                          <span>通信初始化...</span>
+                        </span>
+                      ) : m.status === 'FAILED' ? (
+                        <span className="text-xs font-mono px-2.5 py-0.5 rounded-full bg-rose-950 text-rose-300 border border-rose-700/80 flex items-center gap-1.5 font-medium">
+                          <AlertCircle className="w-3.5 h-3.5 text-rose-400" />
+                          <span>启动异常</span>
+                        </span>
+                      ) : (
+                        <span className="text-xs font-mono px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center gap-1.5">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                          <span>运行中</span>
+                        </span>
+                      )}
 
                       <button
                         onClick={() => openLogs(m)}
@@ -335,6 +377,31 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
                       </button>
                     </div>
                   </div>
+
+                  {/* 状态详情横条 (实时回显权重进度、图预热、或报错提炼) */}
+                  {m.status_detail && (
+                    <div
+                      onClick={() => openLogs(m)}
+                      className={`mx-5 mb-3 px-3 py-1.5 rounded-lg text-xs font-mono border flex items-center justify-between gap-2 cursor-pointer transition ${
+                        m.status === 'FAILED'
+                          ? 'bg-rose-950/40 border-rose-800 text-rose-300 hover:bg-rose-950/60'
+                          : m.status === 'WARMING_UP'
+                          ? 'bg-amber-950/30 border-amber-800/80 text-amber-300 hover:bg-amber-950/50'
+                          : m.status === 'LOADING_WEIGHTS'
+                          ? 'bg-yellow-950/30 border-yellow-800/80 text-yellow-300 hover:bg-yellow-950/50'
+                          : 'bg-slate-950 border-slate-800 text-slate-300 hover:bg-slate-800'
+                      }`}
+                      title="点击直接查看实时日志"
+                    >
+                      <span className="truncate flex items-center gap-2">
+                        <Activity className={`w-3.5 h-3.5 shrink-0 ${m.status === 'FAILED' ? 'text-rose-400' : 'text-amber-400 animate-pulse'}`} />
+                        <span className="truncate">{m.status_detail}</span>
+                      </span>
+                      <span className="text-[11px] font-sans underline shrink-0 flex items-center gap-1 text-slate-400">
+                        <ScrollText className="w-3 h-3" /> 查看日志
+                      </span>
+                    </div>
+                  )}
 
                   {/* 展开后的完整参数与透视面板 */}
                   {isExpanded && (
@@ -435,13 +502,24 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
               {filteredList.map((m) => (
                 <div
                   key={m.name}
-                  className="bg-slate-900/90 border border-slate-800 hover:border-slate-700 rounded-xl p-4 flex flex-col justify-between gap-3 transition shadow-sm group"
+                  className={`bg-slate-900/90 border rounded-xl p-4 flex flex-col justify-between gap-3 transition shadow-sm group ${
+                    m.status === 'FAILED'
+                      ? 'border-rose-700/80 bg-gradient-to-b from-rose-950/20 to-slate-900/90'
+                      : 'border-slate-800 hover:border-slate-700'
+                  }`}
                 >
                   {/* 卡片上部：模型名、引擎与右上紧凑启动按钮 */}
                   <div className="flex items-start justify-between gap-2.5">
                     <div className="min-w-0 flex-1">
-                      <div className="font-bold text-sm text-slate-200 group-hover:text-white truncate" title={m.name}>
-                        {m.name}
+                      <div className="flex items-center gap-2">
+                        <div className="font-bold text-sm text-slate-200 group-hover:text-white truncate" title={m.name}>
+                          {m.name}
+                        </div>
+                        {m.status === 'FAILED' && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-950 text-rose-300 border border-rose-800 font-mono flex items-center gap-1 shrink-0">
+                            <AlertCircle className="w-3 h-3 text-rose-400" /> 异常退出
+                          </span>
+                        )}
                       </div>
                       <div className="flex items-center gap-2 mt-1.5 text-xs text-slate-400 font-mono">
                         <span
@@ -467,9 +545,24 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
                       title="启动此模型容器服务"
                     >
                       <Play className="w-3 h-3 text-emerald-400 fill-emerald-400" />
-                      <span>启动</span>
+                      <span>{m.status === 'FAILED' ? '重试启动' : '启动'}</span>
                     </button>
                   </div>
+
+                  {/* 异常原因一览 (若有) */}
+                  {m.status_detail && (
+                    <div
+                      onClick={() => openLogs(m)}
+                      className="px-2.5 py-1.5 bg-rose-950/40 border border-rose-800/80 rounded-md text-[11px] font-mono text-rose-300 flex items-center justify-between gap-1 cursor-pointer hover:bg-rose-950/60 transition"
+                      title="点击查看报错日志"
+                    >
+                      <span className="truncate flex items-center gap-1.5">
+                        <AlertCircle className="w-3 h-3 text-rose-400 shrink-0" />
+                        <span className="truncate">{m.status_detail}</span>
+                      </span>
+                      <span className="text-[10px] underline shrink-0">报错日志</span>
+                    </div>
+                  )}
 
                   {/* 卡片下部：脚本源码与 Compose 编排透视按钮 */}
                   <div className="grid grid-cols-2 gap-2 pt-2.5 border-t border-slate-800/80 text-xs">
@@ -497,88 +590,27 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
         </div>
       )}
 
-      {/* 底部浮动抽屉：容器实时日志 (支持鼠标自由拉伸高度，不遮挡顶部 GPU 拓扑) */}
-      {modal.show && modal.type === 'logs' && (
-        <div
-          style={isLogsMaximized ? { height: '88vh' } : { height: `${logsHeight}px` }}
-          className={`fixed bottom-0 left-0 right-0 z-40 bg-slate-900 border-t-2 border-indigo-500/80 shadow-[0_-12px_45px_rgba(0,0,0,0.85)] flex flex-col transition-[height] ${
-            isDragging ? 'duration-0 select-none' : 'duration-150'
-          }`}
-        >
-          {/* 顶部可拖拽拉伸把手条 */}
-          {!isLogsMaximized && (
-            <div
-              onMouseDown={handleStartResize}
-              className="w-full h-2.5 cursor-row-resize hover:bg-indigo-500/30 flex items-center justify-center transition-colors group select-none -mt-1 relative z-50"
-              title="按住鼠标上下拖拽，自由调整日志窗口高度"
-            >
-              <div className="w-16 h-1 bg-slate-700 group-hover:bg-indigo-400 rounded-full transition-colors" />
-            </div>
-          )}
-
-          {/* 日志抽屉头部 */}
-          <div className="flex items-center justify-between px-5 py-2.5 bg-slate-950 border-b border-slate-800 shrink-0">
-            <div className="flex items-center gap-2.5">
-              <ScrollText className="w-4 h-4 text-indigo-400" />
-              <span className="font-semibold text-xs text-slate-200 font-mono">{modal.title}</span>
-              <span className="text-[11px] text-slate-500 font-mono hidden sm:inline-block">
-                (上下拖拽边框可拉伸高度)
-              </span>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => activeModel && fetchLogs(activeModel)}
-                className="p-1.5 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded transition"
-                title="刷新日志"
-              >
-                <RotateCw className={`w-3.5 h-3.5 ${modal.loading ? 'animate-spin' : ''}`} />
-              </button>
-              <button
-                onClick={handleCopy}
-                className="p-1.5 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded transition"
-                title="复制日志内容"
-              >
-                <Copy className="w-3.5 h-3.5" />
-              </button>
-              <button
-                onClick={() => setIsLogsMaximized(!isLogsMaximized)}
-                className="p-1.5 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded transition"
-                title={isLogsMaximized ? '还原高度' : '最大化抽屉'}
-              >
-                {isLogsMaximized ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
-              </button>
-              <button
-                onClick={() => setModal({ ...modal, show: false })}
-                className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded transition"
-                title="关闭抽屉"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </div>
-
-          {/* 实时终端日志流 */}
-          <div className="flex-1 overflow-hidden p-3 bg-black">
-            <LogTerminal
-              modelName={modal.modelName}
-              containerName={activeModel?.container_name || activeModel?.service_name || modal.modelName}
-              initialLogs={modal.content}
-              logs={modal.content}
-              isOpen={modal.show && modal.type === 'logs'}
-              onClose={() => setModal({ ...modal, show: false })}
-              className="h-full"
-            />
-          </div>
-        </div>
-      )}
+      {/* 🚀 VS Code 风格底部多容器 Dock 终端面板 (支持多Tab/折叠状态栏/拖拽拉伸/页面自适应不遮挡) */}
+      <DockTerminalPanel
+        tabs={dockTabs}
+        activeTabId={activeDockTabId}
+        models={models}
+        isOpen={isDockOpen}
+        onSelectTab={(tabId) => setActiveDockTabId(tabId)}
+        onCloseTab={handleCloseDockTab}
+        onClosePanel={() => setIsDockOpen(false)}
+        onAddTab={handleAddDockTab}
+        onHeightChange={(h) => setDockPaddingBottom(h)}
+      />
 
       {/* 弹窗：启动脚本代码编辑器 (Monaco Editor) 与 Compose 片段查看器 */}
       {modal.show && modal.type !== 'logs' && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-4xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className={`bg-slate-900 border border-slate-800 rounded-2xl w-full flex flex-col shadow-2xl overflow-hidden transition-all duration-150 ${
+            isScriptMaximized ? 'max-w-[96vw] h-[94vh]' : 'max-w-5xl h-[700px] max-h-[88vh]'
+          }`}>
             {/* 弹窗头部 */}
-            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800 bg-slate-950/60">
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-800 bg-slate-950/80 shrink-0">
               <div className="flex items-center gap-2.5">
                 {modal.type === 'script' ? (
                   <FileCode className="w-5 h-5 text-indigo-400" />
@@ -587,8 +619,8 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
                 )}
                 <div>
                   <h3 className="font-bold text-sm text-slate-100">{modal.title}</h3>
-                  <p className="text-xs text-slate-500 mt-0.5 font-mono">
-                    模型: <span className="text-slate-300">{modal.modelName}</span>
+                  <p className="text-xs text-slate-400 mt-0.5 font-mono">
+                    模型: <span className="text-indigo-300 font-semibold">{modal.modelName}</span>
                   </p>
                 </div>
               </div>
@@ -596,15 +628,23 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
               <div className="flex items-center gap-2">
                 <button
                   onClick={handleCopy}
-                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-medium flex items-center gap-1.5 transition"
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-medium flex items-center gap-1.5 transition cursor-pointer"
                   title="复制内容到剪贴板"
                 >
                   <Copy className="w-3.5 h-3.5" />
                   <span>复制</span>
                 </button>
                 <button
+                  onClick={() => setIsScriptMaximized(!isScriptMaximized)}
+                  className="p-1.5 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-lg transition cursor-pointer"
+                  title={isScriptMaximized ? '还原窗口' : '最大化窗口'}
+                >
+                  {isScriptMaximized ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                </button>
+                <button
                   onClick={() => setModal({ ...modal, show: false })}
-                  className="p-1.5 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-lg transition"
+                  className="p-1.5 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-lg transition cursor-pointer"
+                  title="关闭窗口"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -612,16 +652,15 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
             </div>
 
             {/* 弹窗主体内容 */}
-            <div className="flex-1 overflow-hidden p-4 bg-slate-950">
+            <div className="flex-1 overflow-hidden p-4 bg-slate-950 min-h-0 flex flex-col">
               {modal.type === 'script' ? (
                 <CodeEditor
+                  filename={activeModel?.script || 'start_script.sh'}
                   initialCode={modal.content}
-                  language="shell"
                   onSave={handleSaveScript}
-                  readOnly={false}
                 />
               ) : (
-                <div className="h-[480px] bg-slate-950 rounded-lg border border-slate-800/80 p-4 font-mono text-xs text-slate-300 overflow-y-auto leading-relaxed whitespace-pre selection:bg-indigo-500/30">
+                <div className="flex-1 bg-slate-950 rounded-lg border border-slate-800/80 p-4 font-mono text-xs text-slate-300 overflow-y-auto leading-relaxed whitespace-pre selection:bg-indigo-500/30">
                   {modal.content}
                 </div>
               )}

@@ -42,7 +42,10 @@ export interface ModelCard {
   port: number
   script: string
   image: string
-  status: 'RUNNING' | 'STOPPED'
+  status: 'READY' | 'WARMING_UP' | 'LOADING_WEIGHTS' | 'INIT' | 'FAILED' | 'STOPPED' | 'LOADING' | 'RUNNING'
+  status_detail?: string
+  ping_ms?: number
+  uptime?: string
   pid?: string
   service_name?: string
   container_name?: string
@@ -62,3 +65,64 @@ export interface ModalState {
   content: string
   loading?: boolean
 }
+
+export interface LocalModelAsset {
+  name: string
+  server: string
+  server_ip: string
+  path: string
+  model_type: string
+  architectures: string[]
+  torch_dtype: string
+  quant_method: string
+  max_position: number
+  time: string
+  type: string
+}
+
+export interface HubModelItem {
+  id: string
+  name: string
+  owner: string
+  description: string
+  downloads: number
+  updated_at: string
+  file_size: number
+  tags: string[]
+  local_status: string
+  local_path: string
+  local_meta?: LocalModelAsset
+  download_cmd: string
+  rsync_cmd: string
+}
+
+export interface DownloadTask {
+  pid: string
+  model_id: string
+  local_dir: string
+  local_path: string
+  dir_size: string
+  total_size?: string
+  progress: number
+  speed?: string
+  eta?: string
+  last_log: string
+  status: string
+}
+
+export interface RsyncTask {
+  pid: string
+  model_name: string
+  source_server: string
+  source_path: string
+  target_server: string
+  target_path: string
+  progress: number
+  speed: string
+  eta: string
+  transferred: string
+  total_size: string
+  last_log: string
+  status: string
+}
+

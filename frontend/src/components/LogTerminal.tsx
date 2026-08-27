@@ -3,12 +3,14 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { Play, Square, RotateCw, Trash2, Copy, Check, Terminal as TermIcon, Clock } from 'lucide-react'
+import { StageTimeline } from './StageTimeline'
 
 interface LogTerminalProps {
   modelName?: string
   containerName?: string
   initialLogs?: string
   logs?: string
+  modelStatus?: string
   isOpen?: boolean
   className?: string
   onClose?: () => void
@@ -19,6 +21,7 @@ export const LogTerminal: React.FC<LogTerminalProps> = ({
   containerName = '',
   initialLogs = '',
   logs = '',
+  modelStatus = '',
   isOpen = true,
   className = '',
   onClose
@@ -27,6 +30,7 @@ export const LogTerminal: React.FC<LogTerminalProps> = ({
   const xtermRef = useRef<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
   const lastLogsRef = useRef<string>('')
+  const [currentLogsText, setCurrentLogsText] = useState<string>(logs || initialLogs || '')
 
   const [isStreaming, setIsStreaming] = useState<boolean>(true)
   const [copied, setCopied] = useState<boolean>(false)
@@ -44,6 +48,7 @@ export const LogTerminal: React.FC<LogTerminalProps> = ({
     term.clear()
     term.write(normalized)
     setLineCount(text.split('\n').length)
+    setCurrentLogsText(text)
   }
 
   // 初始化 Terminal
@@ -52,7 +57,7 @@ export const LogTerminal: React.FC<LogTerminalProps> = ({
 
     const term = new Terminal({
       cursorBlink: true,
-      fontFamily: 'Menlo, Monaco, "Courier New", Consolas, monospace',
+      fontFamily: "'Sarasa Term SC Nerd', 'Sarasa Term SC', 'Sarasa Mono SC', ui-monospace, Menlo, Monaco, Consolas, monospace",
       fontSize: 13,
       lineHeight: 1.25,
       theme: {
@@ -185,7 +190,7 @@ export const LogTerminal: React.FC<LogTerminalProps> = ({
   return (
     <div className="flex flex-col h-full bg-[#090d16] text-slate-200">
       {/* 终端控制顶栏 */}
-      <div className="bg-slate-900 border-b border-slate-800 px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs shrink-0">
+      <div className="bg-slate-900 border-b border-slate-800 px-4 py-2 flex flex-wrap items-center justify-between gap-3 text-xs shrink-0">
         <div className="flex items-center gap-3">
           <span className="flex items-center gap-1.5 font-mono text-slate-300 font-semibold">
             <TermIcon className="w-4 h-4 text-slate-400" />
@@ -237,7 +242,7 @@ export const LogTerminal: React.FC<LogTerminalProps> = ({
           {/* 持续刷新 / 停止刷新 核心切换按钮 */}
           <button
             onClick={() => setIsStreaming(!isStreaming)}
-            className={`px-3 py-1.5 rounded-lg font-medium flex items-center gap-1.5 transition border ${
+            className={`px-3 py-1.5 rounded-lg font-medium flex items-center gap-1.5 transition border cursor-pointer ${
               isStreaming
                 ? 'bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border-rose-500/40'
                 : 'bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border-emerald-500/40'
@@ -260,7 +265,7 @@ export const LogTerminal: React.FC<LogTerminalProps> = ({
           <button
             onClick={() => fetchLatestLogs()}
             disabled={fetching}
-            className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg flex items-center gap-1 border border-slate-700 transition disabled:opacity-50"
+            className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg flex items-center gap-1 border border-slate-700 transition disabled:opacity-50 cursor-pointer"
             title="立即手动拉取最新日志"
           >
             <RotateCw className={`w-3.5 h-3.5 ${fetching ? 'animate-spin' : ''}`} />
@@ -270,7 +275,7 @@ export const LogTerminal: React.FC<LogTerminalProps> = ({
           {/* 清空终端 */}
           <button
             onClick={handleClear}
-            className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 rounded-lg border border-slate-700 transition"
+            className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 rounded-lg border border-slate-700 transition cursor-pointer"
             title="清空当前终端显示"
           >
             <Trash2 className="w-3.5 h-3.5" />
@@ -279,7 +284,7 @@ export const LogTerminal: React.FC<LogTerminalProps> = ({
           {/* 复制全部日志 */}
           <button
             onClick={handleCopyLogs}
-            className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg flex items-center gap-1 border border-slate-700 transition"
+            className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg flex items-center gap-1 border border-slate-700 transition cursor-pointer"
             title="复制全部日志到剪贴板"
           >
             {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
@@ -287,6 +292,9 @@ export const LogTerminal: React.FC<LogTerminalProps> = ({
           </button>
         </div>
       </div>
+
+      {/* 🚀 阶段甘特图与生命周期耗时分析看板 */}
+      <StageTimeline logs={currentLogsText} modelStatus={modelStatus} />
 
       {/* xterm 真实终端挂载区域 */}
       <div className="flex-1 p-2 overflow-hidden relative">
