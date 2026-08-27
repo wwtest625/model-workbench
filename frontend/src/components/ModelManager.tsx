@@ -233,9 +233,113 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
         </div>
       </div>
 
-      {/* 主布局：左侧运行中核心主视窗 + 右侧未运行模型长方块收纳坞 */}
+      {/* 主布局：左侧待机模型收纳坞 + 右侧运行中核心主视窗 */}
       <div className="flex flex-col lg:flex-row gap-5 items-start">
-        {/* 左侧：运行中的核心容器列表 (支持折叠与展开) */}
+        {/* 左侧：未运行模型长方块收纳坞 (Standby Models Dock) */}
+        {sidebarOpen && (
+          <aside className="w-full lg:w-88 shrink-0 bg-slate-900/90 border border-slate-800 rounded-2xl p-4.5 space-y-3.5 shadow-sm">
+            {/* 收纳坞头部与搜索 */}
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <Container className="w-4 h-4 text-indigo-400" />
+                <h3 className="font-bold text-sm text-slate-100">待机模型收纳坞</h3>
+                <span className="text-xs px-2 py-0.2 rounded-full bg-slate-800 text-slate-400 font-mono">
+                  {standbyModels.length}
+                </span>
+              </div>
+              <button
+                onClick={() => setSidebarOpen(false)}
+                className="p-1 rounded text-slate-500 hover:text-slate-300 hover:bg-slate-800 transition"
+                title="收起待机坞"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* 搜索框 */}
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 absolute left-3 top-3 text-slate-500" />
+              <input
+                type="text"
+                placeholder="搜索模型 / 引擎..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-8 pr-3 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-mono"
+              />
+            </div>
+
+            {/* 待机模型长方块列表 */}
+            <div className="space-y-2.5 max-h-[620px] overflow-y-auto pr-1">
+              {filteredStandby.length === 0 ? (
+                <div className="text-center py-8 text-xs text-slate-500">
+                  {searchQuery ? '没有找到匹配的待机模型' : '所有配置的模型都在运行中'}
+                </div>
+              ) : (
+                filteredStandby.map((m) => (
+                  <div
+                    key={m.name}
+                    className="bg-slate-950/90 border border-slate-800/90 hover:border-slate-700 rounded-xl p-3 flex flex-col justify-between gap-2.5 transition shadow-sm group"
+                  >
+                    {/* 长方块上方：名称、引擎与紧凑启动按钮 */}
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="font-bold text-xs text-slate-200 group-hover:text-white truncate" title={m.name}>
+                          {m.name}
+                        </div>
+                        <div className="flex items-center gap-2 mt-1 text-[11px] text-slate-400 font-mono">
+                          <span
+                            className={`px-1.5 py-0.2 rounded font-medium ${
+                              m.engine === 'vLLM'
+                                ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
+                                : 'bg-purple-500/10 text-purple-400 border border-purple-500/20'
+                            }`}
+                          >
+                            {m.engine}
+                          </span>
+                          <span>TP={m.tp}</span>
+                          <span>·</span>
+                          <span>Port {m.port}</span>
+                        </div>
+                      </div>
+
+                      {/* 右上紧凑启动小按钮 */}
+                      <button
+                        onClick={() => onStartModel(m)}
+                        className="shrink-0 py-1 px-2.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 rounded-lg text-xs font-semibold flex items-center gap-1 transition cursor-pointer"
+                        title="启动此模型容器服务"
+                      >
+                        <Play className="w-3 h-3 text-emerald-400 fill-emerald-400" />
+                        <span>启动</span>
+                      </button>
+                    </div>
+
+                    {/* 长方块下方：脚本源码与 Compose 编排透视按钮 */}
+                    <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-900 text-[11px]">
+                      <button
+                        onClick={() => openScript(m)}
+                        className="py-1 px-2 bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 rounded border border-slate-800 flex items-center justify-center gap-1 transition font-mono"
+                        title="查看脚本源码"
+                      >
+                        <FileCode className="w-3 h-3 text-slate-500" />
+                        <span>脚本源码</span>
+                      </button>
+                      <button
+                        onClick={() => openCompose(m)}
+                        className="py-1 px-2 bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 rounded border border-slate-800 flex items-center justify-center gap-1 transition font-mono"
+                        title="查看容器 Compose 编排"
+                      >
+                        <Container className="w-3 h-3 text-slate-500" />
+                        <span>Compose</span>
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </aside>
+        )}
+
+        {/* 右侧：运行中的核心容器列表 (支持折叠与展开) */}
         <div className="flex-1 w-full space-y-3.5">
           <div className="flex items-center justify-between px-1">
             <h3 className="text-sm font-semibold text-slate-200 flex items-center gap-2">
@@ -254,7 +358,7 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
               </div>
               <div>
                 <p className="text-sm font-medium text-slate-300">当前没有运行中的大模型容器</p>
-                <p className="text-xs text-slate-500 mt-1">请从右侧【待机模型收纳坞】点击「启动服务」一键拉起容器</p>
+                <p className="text-xs text-slate-500 mt-1">请从左侧【待机模型收纳坞】点击「启动」一键拉起容器</p>
               </div>
             </div>
           ) : (
@@ -270,10 +374,10 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
                     {/* 折叠标题横条 (点击切换折叠/展开) */}
                     <div
                       onClick={() => toggleExpand(m.name)}
-                      className="px-5 py-3.5 flex items-center justify-between gap-4 cursor-pointer hover:bg-slate-800/40 transition select-none"
+                      className="px-5 py-3.5 flex items-center justify-between cursor-pointer select-none hover:bg-slate-800/40 transition"
                     >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <button className="text-slate-400 hover:text-slate-200">
+                      <div className="flex items-center gap-3 truncate">
+                        <button className="p-0.5 rounded text-slate-400 hover:text-slate-200">
                           {isExpanded ? (
                             <ChevronDown className="w-4 h-4 text-indigo-400 transition-transform" />
                           ) : (
@@ -358,43 +462,33 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
 
                           return (
                             <div className="bg-slate-950 rounded-lg p-3 text-xs font-mono text-slate-400 space-y-1.5 border border-slate-800">
-                              <div className="space-y-1">
-                                <div className="flex items-start gap-1">
-                                  <span className="text-slate-500 shrink-0">Docker 镜像:</span>
-                                  <span className="text-slate-300 font-medium break-all" title={repo}>
-                                    {repo}
-                                  </span>
-                                </div>
-                                <div className="flex items-center gap-1.5">
-                                  <span className="text-slate-500 shrink-0">Image Tag:</span>
-                                  <span className="text-indigo-300 font-semibold px-1.5 py-0.5 rounded bg-indigo-500/10 border border-indigo-500/20">
-                                    {tag}
-                                  </span>
-                                </div>
+                              <div className="flex flex-col sm:flex-row sm:items-baseline gap-1">
+                                <span className="text-slate-500 text-[11px] shrink-0">镜像仓库 Repo:</span>
+                                <span className="text-slate-200 font-medium break-all">{repo}</span>
                               </div>
-                              <div className="pt-1.5 border-t border-slate-900 flex items-center gap-1 truncate">
-                                <span className="text-slate-500 shrink-0">启动脚本:</span>
-                                <span className="text-slate-300 font-medium truncate">{m.script}</span>
+                              <div className="flex flex-col sm:flex-row sm:items-baseline gap-1">
+                                <span className="text-slate-500 text-[11px] shrink-0">镜像标签 Tag:</span>
+                                <span className="text-indigo-400 font-semibold break-all">{tag}</span>
                               </div>
                             </div>
                           )
                         })()}
 
-                        {/* 三大透视操作按钮 */}
-                        <div className="grid grid-cols-3 gap-2.5 text-xs">
+                        {/* 三大透视操作栏 */}
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1 text-xs">
                           <button
                             onClick={() => openScript(m)}
-                            className="py-2 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg border border-slate-700 flex items-center justify-center gap-1.5 transition font-medium"
+                            className="py-2 px-3 bg-slate-950 hover:bg-slate-800 text-slate-300 rounded-lg border border-slate-800 flex items-center justify-center gap-1.5 transition font-medium"
                           >
-                            <FileCode className="w-3.5 h-3.5 text-slate-400" />
-                            <span>脚本源码</span>
+                            <FileCode className="w-3.5 h-3.5 text-indigo-400" />
+                            <span>启动脚本源码</span>
                           </button>
                           <button
                             onClick={() => openCompose(m)}
-                            className="py-2 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg border border-slate-700 flex items-center justify-center gap-1.5 transition font-medium"
+                            className="py-2 px-3 bg-slate-950 hover:bg-slate-800 text-slate-300 rounded-lg border border-slate-800 flex items-center justify-center gap-1.5 transition font-medium"
                           >
-                            <Container className="w-3.5 h-3.5 text-slate-400" />
-                            <span>Compose 定义</span>
+                            <Container className="w-3.5 h-3.5 text-indigo-400" />
+                            <span>Compose 编排</span>
                           </button>
                           <button
                             onClick={() => openLogs(m)}
@@ -412,111 +506,6 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
             </div>
           )}
         </div>
-
-        {/* 右侧：未运行模型长方块收纳坞 (Standby Models Drawer) */}
-        {sidebarOpen && (
-          <aside className="w-full lg:w-96 shrink-0 bg-slate-900/90 border border-slate-800 rounded-2xl p-4.5 space-y-3.5 shadow-sm">
-            {/* 收纳坞头部与搜索 */}
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-              <div className="flex items-center gap-2">
-                <Container className="w-4 h-4 text-indigo-400" />
-                <h3 className="font-bold text-sm text-slate-100">待机模型收纳坞</h3>
-                <span className="text-xs px-2 py-0.2 rounded-full bg-slate-800 text-slate-400 font-mono">
-                  {standbyModels.length}
-                </span>
-              </div>
-              <button
-                onClick={() => setSidebarOpen(false)}
-                className="p-1 rounded text-slate-500 hover:text-slate-300 hover:bg-slate-800 transition"
-                title="收起侧栏"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* 搜索框 */}
-            <div className="relative">
-              <Search className="w-3.5 h-3.5 absolute left-3 top-3 text-slate-500" />
-              <input
-                type="text"
-                placeholder="搜索模型 / 引擎..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-8 pr-3 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-mono"
-              />
-            </div>
-
-            {/* 待机模型长方块列表 */}
-            <div className="space-y-2.5 max-h-[620px] overflow-y-auto pr-1">
-              {filteredStandby.length === 0 ? (
-                <div className="text-center py-8 text-xs text-slate-500">
-                  {searchQuery ? '没有找到匹配的待机模型' : '所有配置的模型都在运行中'}
-                </div>
-              ) : (
-                filteredStandby.map((m) => (
-                  <div
-                    key={m.name}
-                    className="bg-slate-950/90 border border-slate-800/90 hover:border-slate-700 rounded-xl p-3 flex flex-col justify-between gap-2.5 transition shadow-sm group"
-                  >
-                    {/* 长方块上方：名称、引擎与紧凑启动按钮 */}
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0 flex-1">
-                        <div className="font-bold text-xs text-slate-200 group-hover:text-white truncate" title={m.name}>
-                          {m.name}
-                        </div>
-                        <div className="flex items-center gap-2 mt-1 text-[11px] text-slate-400 font-mono">
-                          <span
-                            className={`px-1.5 py-0.2 rounded font-medium ${
-                              m.engine === 'vLLM'
-                                ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
-                                : 'bg-purple-500/10 text-purple-400 border border-purple-500/20'
-                            }`}
-                          >
-                            {m.engine}
-                          </span>
-                          <span>TP={m.tp}</span>
-                          <span>·</span>
-                          <span>Port {m.port}</span>
-                        </div>
-                      </div>
-
-                      {/* 右上紧凑启动小按钮 */}
-                      <button
-                        onClick={() => onStartModel(m)}
-                        disabled={operatingModel}
-                        className="shrink-0 py-1 px-2.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 rounded-lg text-xs font-semibold flex items-center gap-1 transition cursor-pointer"
-                        title="启动此模型容器服务"
-                      >
-                        <Play className="w-3 h-3 text-emerald-400 fill-emerald-400" />
-                        <span>启动</span>
-                      </button>
-                    </div>
-
-                    {/* 长方块下方：脚本源码与 Compose 编排透视按钮 */}
-                    <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-900 text-[11px]">
-                      <button
-                        onClick={() => openScript(m)}
-                        className="py-1 px-2 bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 rounded border border-slate-800 flex items-center justify-center gap-1 transition font-mono"
-                        title="查看脚本源码"
-                      >
-                        <FileCode className="w-3 h-3 text-slate-500" />
-                        <span>脚本源码</span>
-                      </button>
-                      <button
-                        onClick={() => openCompose(m)}
-                        className="py-1 px-2 bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 rounded border border-slate-800 flex items-center justify-center gap-1 transition font-mono"
-                        title="查看容器 Compose 编排"
-                      >
-                        <Container className="w-3 h-3 text-slate-500" />
-                        <span>Compose</span>
-                      </button>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </aside>
-        )}
       </div>
 
       {/* 底部浮动抽屉：容器实时日志 (支持鼠标自由拉伸高度，不遮挡顶部 GPU 拓扑) */}
