@@ -138,12 +138,13 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
 
   const openLogs = async (m: ModelCard) => {
     setActiveModel(m)
+    const targetName = m.container_name || m.service_name || m.name
     setModal({
       show: true,
       type: 'logs',
-      title: `容器实时日志 (docker logs ${m.container_name || ''} / 最近 250 行)`,
+      title: `容器实时日志 (docker logs ${targetName} / 最近 300 行)`,
       modelName: m.name,
-      content: '正在拉取容器日志...',
+      content: '正在拉取容器实时日志流...',
       loading: true
     })
     await fetchLogs(m)
@@ -151,9 +152,10 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
 
   const fetchLogs = async (m: ModelCard) => {
     try {
-      const res = await fetch(`/api/v1/models/logs?name=${encodeURIComponent(m.name)}`)
+      const targetName = m.container_name || m.service_name || m.name
+      const res = await fetch(`/api/v1/models/logs?name=${encodeURIComponent(targetName)}`)
       const data = await res.json()
-      setModal((prev) => ({ ...prev, content: data.logs || '(暂无日志)', loading: false }))
+      setModal((prev) => ({ ...prev, content: data.logs || '(暂无日志输出)', loading: false }))
     } catch (e: any) {
       setModal((prev) => ({ ...prev, content: `拉取日志失败: ${e.message}`, loading: false }))
     }

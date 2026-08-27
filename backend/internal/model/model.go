@@ -327,14 +327,42 @@ func (m *ModelManager) StopAllModels() error {
 	return err
 }
 
-func (m *ModelManager) GetContainerLogs(modelName string) (string, error) {
+func (m *ModelManager) GetContainerLogs(modelOrContainerName string) (string, error) {
 	h, err := host.GetHostManager().GetCurrentHost()
 	if err != nil {
 		return "", err
 	}
 
-	cmd := fmt.Sprintf("docker logs --tail 250 %s 2>&1 || cat /tmp/%s.log 2>/dev/null || echo 'NO_CONTAINER_LOGS_FOUND'", modelName, modelName)
-	res, err := runner.RunCmd(h.SSHAlias, cmd, 10)
+	target := strings.TrimSpace(modelOrContainerName)
+	if target == "" {
+		return "未指定容器或模型名称", nil
+	}
+
+	// 如果传入的是预设模型名，优先映射为预设的 ContainerName
+	for _, p := range h.Models {
+		if strings.EqualFold(p.Name, target) || strings.EqualFold(p.ServiceName, target) {
+			if p.ContainerName != "" {
+				target = p.ContainerName
+				break
+			}
+		}
+	}
+
+	sh := fmt.Sprintf(`
+TARGET="%s"
+if docker ps -a --format "{{.Names}}" | grep -ix "${TARGET}" >/dev/null 2>&1; then
+    docker logs --tail 300 "${TARGET}" 2>&1
+else
+    MATCH=$(docker ps -a --format "{{.Names}}" | grep -i "${TARGET}" | head -1)
+    if [ -n "$MATCH" ]; then
+        docker logs --tail 300 "$MATCH" 2>&1
+    else
+        docker logs --tail 300 "${TARGET}" 2>&1 || cat /tmp/${TARGET}.log 2>/dev/null || echo "未找到容器 ${TARGET} 的运行日志"
+    fi
+fi
+`, target)
+
+	res, err := runner.RunCmd(h.SSHAlias, sh, 12)
 	if err != nil {
 		return "", err
 	}
