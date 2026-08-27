@@ -5,12 +5,24 @@ import '@xterm/xterm/css/xterm.css'
 import { Play, Square, RotateCw, Trash2, Copy, Check, Terminal as TermIcon, Clock } from 'lucide-react'
 
 interface LogTerminalProps {
-  modelName: string
-  initialLogs: string
-  isOpen: boolean
+  modelName?: string
+  containerName?: string
+  initialLogs?: string
+  logs?: string
+  isOpen?: boolean
+  className?: string
+  onClose?: () => void
 }
 
-export const LogTerminal: React.FC<LogTerminalProps> = ({ modelName, initialLogs, isOpen }) => {
+export const LogTerminal: React.FC<LogTerminalProps> = ({
+  modelName = '',
+  containerName = '',
+  initialLogs = '',
+  logs = '',
+  isOpen = true,
+  className = '',
+  onClose
+}) => {
   const terminalRef = useRef<HTMLDivElement>(null)
   const xtermRef = useRef<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
@@ -22,6 +34,8 @@ export const LogTerminal: React.FC<LogTerminalProps> = ({ modelName, initialLogs
   const [lineCount, setLineCount] = useState<number>(0)
   const [countdown, setCountdown] = useState<number>(2)
   const [lastUpdateTime, setLastUpdateTime] = useState<string>('')
+
+  const targetQueryName = containerName || modelName
 
   // 格式化换行并写入终端
   const writeLogsToTerminal = (term: Terminal, text: string) => {
@@ -78,9 +92,10 @@ export const LogTerminal: React.FC<LogTerminalProps> = ({ modelName, initialLogs
     xtermRef.current = term
     fitAddonRef.current = fitAddon
 
-    if (initialLogs) {
-      writeLogsToTerminal(term, initialLogs)
-      lastLogsRef.current = initialLogs
+    const currentText = logs || initialLogs
+    if (currentText) {
+      writeLogsToTerminal(term, currentText)
+      lastLogsRef.current = currentText
       const now = new Date()
       setLastUpdateTime(now.toTimeString().substring(0, 8))
     }
@@ -102,12 +117,23 @@ export const LogTerminal: React.FC<LogTerminalProps> = ({ modelName, initialLogs
     }
   }, [isOpen])
 
+  // 监听外部传入的 logs 或 initialLogs 更新
+  useEffect(() => {
+    const currentText = logs || initialLogs
+    if (xtermRef.current && currentText && currentText !== lastLogsRef.current) {
+      writeLogsToTerminal(xtermRef.current, currentText)
+      lastLogsRef.current = currentText
+      const now = new Date()
+      setLastUpdateTime(now.toTimeString().substring(0, 8))
+    }
+  }, [logs, initialLogs])
+
   // 单次拉取最新日志
   const fetchLatestLogs = useCallback(async () => {
-    if (!isOpen) return
+    if (!isOpen || !targetQueryName) return
     setFetching(true)
     try {
-      const res = await fetch(`/api/v1/models/logs?name=${encodeURIComponent(modelName)}`)
+      const res = await fetch(`/api/v1/models/logs?name=${encodeURIComponent(targetQueryName)}`)
       const data = await res.json()
       const newLogs = data.logs || '暂无日志输出'
       if (xtermRef.current && newLogs !== lastLogsRef.current) {
@@ -121,7 +147,7 @@ export const LogTerminal: React.FC<LogTerminalProps> = ({ modelName, initialLogs
     } finally {
       setFetching(false)
     }
-  }, [isOpen, modelName])
+  }, [isOpen, targetQueryName])
 
   // 动态真实倒计时调度引擎 (每秒跳动 1 次，倒数到 0 触发拉取并重置为 2)
   useEffect(() => {

@@ -560,7 +560,15 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
 
           {/* 实时终端日志流 */}
           <div className="flex-1 overflow-hidden p-3 bg-black">
-            <LogTerminal logs={modal.content} className="h-full" />
+            <LogTerminal
+              modelName={modal.modelName}
+              containerName={activeModel?.container_name || activeModel?.service_name || modal.modelName}
+              initialLogs={modal.content}
+              logs={modal.content}
+              isOpen={modal.show && modal.type === 'logs'}
+              onClose={() => setModal({ ...modal, show: false })}
+              className="h-full"
+            />
           </div>
         </div>
       )}
