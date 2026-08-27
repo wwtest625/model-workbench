@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>大模型工作台布局重构方案设计 (3 版方案预览)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    body { background-color: #0b0f17; color: #e2e8f0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+    .glow-emerald { box-shadow: 0 0 15px rgba(16, 185, 129, 0.15); }
+    .glow-indigo { box-shadow: 0 0 15px rgba(99, 102, 241, 0.15); }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0f172a; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+  <!-- 顶部方案切换控制器 -->
+  <header class="bg-slate-900/95 backdrop-blur border-b border-slate-800 sticky top-0 z-50 px-6 py-3.5 flex flex-wrap items-center justify-between gap-4">
+    <div class="flex items-center gap-3">
+      <div class="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white shadow-lg">
+        <i class="fa-solid fa-layer-group text-sm"></i>
+      </div>
+      <div>
+        <h1 class="font-bold text-base text-slate-100 flex items-center gap-2">
+          大模型工作台 · 容器管理架构设计评审
+        </h1>
+        <p class="text-xs text-slate-400">参考 Portainer、Ray Dashboard 与 AWS SageMaker 业界经典设计</p>
+      </div>
+    </div>
+
+    <!-- 方案切换 Tab 按钮组 -->
+    <div class="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 gap-1 text-xs">
+      <button onclick="switchScheme('scheme-a')" id="btn-scheme-a" class="tab-btn px-3.5 py-1.5 rounded-lg font-medium transition bg-indigo-600 text-white shadow cursor-pointer">
+        方案 A：左侧独立资源坞 (Portainer 经典风)
+      </button>
+      <button onclick="switchScheme('scheme-b')" id="btn-scheme-b" class="tab-btn px-3.5 py-1.5 rounded-lg font-medium transition text-slate-400 hover:text-slate-200 cursor-pointer">
+        方案 B：全景统一看板 (Ray / Datadog 风格)
+      </button>
+      <button onclick="switchScheme('scheme-c')" id="btn-scheme-c" class="tab-btn px-3.5 py-1.5 rounded-lg font-medium transition text-slate-400 hover:text-slate-200 cursor-pointer">
+        方案 C：纯净聚焦+浮层抽屉 (SageMaker / HF 极简风)
+      </button>
+    </div>
+  </header>
+
+  <!-- 主体内容容器 -->
+  <main class="flex-1 p-6 max-w-7xl mx-auto w-full space-y-6">
+
+    <!-- 方案说明条 -->
+    <div id="scheme-desc" class="bg-slate-900 border border-slate-800 rounded-xl p-4 flex items-start gap-3.5">
+      <div class="p-2 bg-indigo-500/10 text-indigo-400 rounded-lg shrink-0 mt-0.5">
+        <i class="fa-solid fa-circle-info"></i>
+      </div>
+      <div class="text-xs space-y-1">
+        <div class="font-bold text-sm text-slate-200" id="scheme-title">方案 A：左侧固定独立待机坞 + 右侧主工作画卷 (Portainer 经典架构)</div>
+        <p class="text-slate-400 leading-relaxed" id="scheme-summary">
+          <b>设计逻辑</b>：左侧设立固定宽度的「待机模型资源库」，以紧凑微卡形式展示待机模型；右侧自适应铺满「GPU 算力拓扑大盘」与「运行中容器深度操作区」。左右职责彻底分离，左选右控。
+        </p>
+      </div>
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- 方案 A：Portainer 风格（左侧固定模型库 + 右侧运行工作区） -->
+    <!-- ========================================================================= -->
+    <div id="scheme-a" class="scheme-view space-y-6">
+      
+      <!-- GPU 拓扑大盘 -->
+      <section class="bg-slate-900 border border-slate-800 rounded-xl p-4.5 space-y-3">
+        <div class="flex items-center justify-between text-xs">
+          <div class="flex items-center gap-2">
+            <span class="font-bold text-slate-200 text-sm"><i class="fa-solid fa-microchip text-slate-400 mr-1.5"></i>GPU 实时拓扑与显存</span>
+            <span class="px-2 py-0.5 rounded-full bg-slate-800 text-indigo-300 font-mono">MetaX N300-A · 16 卡在线</span>
+          </div>
+          <span class="text-slate-400 font-mono">总显存: <b class="text-slate-200">184.8</b> / 768.0 GB (24.1%)</span>
+        </div>
+        <div class="grid grid-cols-4 gap-3">
+          <div class="bg-slate-950 border border-slate-800 rounded-lg p-2.5">
+            <div class="flex justify-between text-xs font-mono mb-1.5"><span>GPU 0</span><span class="text-slate-400">37°C · 81W</span></div>
+            <div class="w-full bg-slate-800 h-2 rounded-full mb-1.5"><div class="h-full bg-rose-500 rounded-full" style="width: 96%"></div></div>
+            <div class="flex justify-between text-[11px] font-mono text-slate-400"><span>46.2 / 48.0 GB</span><span class="text-rose-400 font-bold">96.4%</span></div>
+          </div>
+          <div class="bg-slate-950 border border-slate-800 rounded-lg p-2.5">
+            <div class="flex justify-between text-xs font-mono mb-1.5"><span>GPU 1</span><span class="text-slate-400">36°C · 79W</span></div>
+            <div class="w-full bg-slate-800 h-2 rounded-full mb-1.5"><div class="h-full bg-rose-500 rounded-full" style="width: 96%"></div></div>
+            <div class="flex justify-between text-[11px] font-mono text-slate-400"><span>46.2 / 48.0 GB</span><span class="text-rose-400 font-bold">96.4%</span></div>
+          </div>
+          <div class="bg-slate-950 border border-slate-800 rounded-lg p-2.5">
+            <div class="flex justify-between text-xs font-mono mb-1.5"><span>GPU 2</span><span class="text-slate-400">36°C · 80W</span></div>
+            <div class="w-full bg-slate-800 h-2 rounded-full mb-1.5"><div class="h-full bg-rose-500 rounded-full" style="width: 96%"></div></div>
+            <div class="flex justify-between text-[11px] font-mono text-slate-400"><span>46.2 / 48.0 GB</span><span class="text-rose-400 font-bold">96.4%</span></div>
+          </div>
+          <div class="bg-slate-950 border border-slate-800 rounded-lg p-2.5">
+            <div class="flex justify-between text-xs font-mono mb-1.5"><span>GPU 3</span><span class="text-slate-400">35°C · 78W</span></div>
+            <div class="w-full bg-slate-800 h-2 rounded-full mb-1.5"><div class="h-full bg-rose-500 rounded-full" style="width: 96%"></div></div>
+            <div class="flex justify-between text-[11px] font-mono text-slate-400"><span>46.2 / 48.0 GB</span><span class="text-rose-400 font-bold">96.4%</span></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 核心左右分栏 -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+        
+        <!-- 左侧 4 列：待机模型库 (小长方块收纳坞) -->
+        <div class="lg:col-span-4 bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3">
+          <div class="flex items-center justify-between pb-2.5 border-b border-slate-800">
+            <span class="font-bold text-xs text-slate-200 flex items-center gap-1.5">
+              <i class="fa-solid fa-box-archive text-indigo-400"></i> 待机模型库 (5)
+            </span>
+            <span class="text-[11px] text-slate-500">点击启动</span>
+          </div>
+
+          <!-- 搜索 -->
+          <input type="text" placeholder="搜索模型/脚本..." class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none">
+
+          <!-- 待机卡片堆叠 -->
+          <div class="space-y-2.5 max-h-[460px] overflow-y-auto pr-1">
+            
+            <div class="bg-slate-950 border border-slate-800/90 rounded-lg p-3 hover:border-slate-700 transition">
+              <div class="flex items-start justify-between">
+                <div>
+                  <div class="font-bold text-xs text-slate-200">DeepSeek-V4-Flash-W8A8</div>
+                  <div class="text-[11px] text-slate-400 font-mono mt-0.5">
+                    <span class="text-blue-400 bg-blue-500/10 px-1 py-0.2 rounded border border-blue-500/20">vLLM</span>
+                    <span class="ml-1">TP=4 · Port 8000</span>
+                  </div>
+                </div>
+                <button class="px-2 py-1 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 rounded text-[11px] font-semibold flex items-center gap-1">
+                  <i class="fa-solid fa-play text-[9px]"></i> 启动
+                </button>
+              </div>
+              <div class="grid grid-cols-2 gap-1.5 mt-2.5 pt-2 border-t border-slate-900 text-[11px] font-mono">
+                <button class="bg-slate-900 hover:bg-slate-800 text-slate-400 py-0.5 rounded border border-slate-800">脚本源码</button>
+                <button class="bg-slate-900 hover:bg-slate-800 text-slate-400 py-0.5 rounded border border-slate-800">Compose</button>
+              </div>
+            </div>
+
+            <div class="bg-slate-950 border border-slate-800/90 rounded-lg p-3 hover:border-slate-700 transition">
+              <div class="flex items-start justify-between">
+                <div>
+                  <div class="font-bold text-xs text-slate-200">MiniMax-M2.5-W8A8</div>
+                  <div class="text-[11px] text-slate-400 font-mono mt-0.5">
+                    <span class="text-blue-400 bg-blue-500/10 px-1 py-0.2 rounded border border-blue-500/20">vLLM</span>
+                    <span class="ml-1">TP=4 · Port 8000</span>
+                  </div>
+                </div>
+                <button class="px-2 py-1 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 rounded text-[11px] font-semibold flex items-center gap-1">
+                  <i class="fa-solid fa-play text-[9px]"></i> 启动
+                </button>
+              </div>
+              <div class="grid grid-cols-2 gap-1.5 mt-2.5 pt-2 border-t border-slate-900 text-[11px] font-mono">
+                <button class="bg-slate-900 hover:bg-slate-800 text-slate-400 py-0.5 rounded border border-slate-800">脚本源码</button>
+                <button class="bg-slate-900 hover:bg-slate-800 text-slate-400 py-0.5 rounded border border-slate-800">Compose</button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- 右侧 8 列：运行中容器深度操作区 -->
+        <div class="lg:col-span-8 space-y-3">
+          <div class="flex items-center justify-between px-1">
+            <span class="font-bold text-xs text-slate-200 flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+              运行中容器实例 (1)
+            </span>
+            <button class="px-2.5 py-1 bg-rose-950/80 hover:bg-rose-900 text-rose-300 border border-rose-800/60 rounded text-xs">
+              <i class="fa-solid fa-power-off mr-1"></i>停止全部容器
+            </button>
+          </div>
+
+          <!-- 运行中卡片 -->
+          <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-sm">
+            <div class="p-4 flex items-center justify-between bg-slate-900/60">
+              <div class="flex items-center gap-3">
+                <i class="fa-solid fa-chevron-down text-indigo-400 text-xs"></i>
+                <span class="font-bold text-sm text-slate-100 font-mono">Qwen3.8-27B</span>
+                <span class="text-xs px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 font-mono">vLLM</span>
+              </div>
+              <div class="flex items-center gap-2.5">
+                <span class="text-xs font-mono text-slate-400">Port: <b class="text-slate-200">8000</b></span>
+                <span class="text-xs font-mono px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">● 运行中</span>
+                <button class="px-2 py-1 bg-slate-800 text-slate-300 rounded text-xs border border-slate-700"><i class="fa-solid fa-terminal mr-1"></i>实时日志</button>
+                <button class="px-2 py-1 bg-rose-600/20 text-rose-300 rounded text-xs border border-rose-600/40"><i class="fa-solid fa-stop mr-1"></i>停止</button>
+              </div>
+            </div>
+
+            <!-- 展开详情参数 -->
+            <div class="p-4 bg-slate-950/60 border-t border-slate-800/80 space-y-3 text-xs font-mono">
+              <div class="grid grid-cols-4 gap-2.5">
+                <div class="bg-slate-900 p-2 rounded border border-slate-800"><span class="text-slate-500 block">框架</span><span class="text-indigo-300">vLLM 0.18</span></div>
+                <div class="bg-slate-900 p-2 rounded border border-slate-800"><span class="text-slate-500 block">张量并行</span><span class="text-slate-200">TP=8 卡</span></div>
+                <div class="bg-slate-900 p-2 rounded border border-slate-800"><span class="text-slate-500 block">监听端口</span><span class="text-slate-200">8000</span></div>
+                <div class="bg-slate-900 p-2 rounded border border-slate-800"><span class="text-slate-500 block">宿主 PID</span><span class="text-slate-200">308821</span></div>
+              </div>
+              <div class="bg-slate-950 p-2.5 rounded border border-slate-800 text-slate-400">
+                <div>Repo: <span class="text-slate-200">cr.metax-tech.com/public-ai-release/maca/modelzoo.llm.vllm</span></div>
+                <div class="mt-0.5">Tag: <span class="text-indigo-400">1.0.3-maca.ai3.7.0.107-torch2.8</span></div>
+              </div>
+              <div class="grid grid-cols-3 gap-2 text-xs">
+                <button class="py-1.5 bg-slate-900 text-slate-300 rounded border border-slate-800"><i class="fa-solid fa-code mr-1"></i>启动脚本源码</button>
+                <button class="py-1.5 bg-slate-900 text-slate-300 rounded border border-slate-800"><i class="fa-solid fa-boxes-stacked mr-1"></i>Compose 编排</button>
+                <button class="py-1.5 bg-indigo-600/20 text-indigo-300 rounded border border-indigo-500/40"><i class="fa-solid fa-terminal mr-1"></i>打开控制台</button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- 方案 B：Ray Dashboard 一体化全景看板（无左右分栏，全幅表格/卡片切换） -->
+    <!-- ========================================================================= -->
+    <div id="scheme-b" class="scheme-view hidden space-y-6">
+      
+      <!-- GPU 拓扑全幅 -->
+      <section class="bg-slate-900 border border-slate-800 rounded-xl p-4.5 space-y-3">
+        <div class="flex items-center justify-between text-xs">
+          <div class="flex items-center gap-2">
+            <span class="font-bold text-slate-200 text-sm"><i class="fa-solid fa-chart-line text-slate-400 mr-1.5"></i>集群算力全景状态</span>
+            <span class="px-2 py-0.5 rounded-full bg-slate-800 text-indigo-300 font-mono">16 卡在线 · 总显存 768 GB</span>
+          </div>
+          <div class="flex items-center gap-4 text-xs font-mono text-slate-400">
+            <span>运行中: <b class="text-emerald-400">1</b></span>
+            <span>待机: <b class="text-slate-300">5</b></span>
+          </div>
+        </div>
+      </section>
+
+      <!-- 状态过滤器导航条 -->
+      <div class="flex items-center justify-between bg-slate-900 border border-slate-800 rounded-xl p-3">
+        <div class="flex items-center gap-2 text-xs">
+          <button class="px-3 py-1.5 rounded-lg bg-indigo-600 text-white font-medium">全部模型 (6)</button>
+          <button class="px-3 py-1.5 rounded-lg bg-slate-800 text-emerald-300 font-medium">运行中 (1)</button>
+          <button class="px-3 py-1.5 rounded-lg bg-slate-800 text-slate-400 hover:text-slate-200 font-medium">待机收纳 (5)</button>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <input type="text" placeholder="按名称/端口实时过滤..." class="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none w-64">
+          <button class="px-3 py-1.5 bg-rose-950/80 hover:bg-rose-900 text-rose-300 border border-rose-800/60 rounded-lg text-xs font-medium">
+            停止全部
+          </button>
+        </div>
+      </div>
+
+      <!-- 一体化全景模型卡片网格 (3 列规整大方) -->
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        
+        <!-- 运行中卡片 (高亮微光) -->
+        <div class="bg-slate-900 border-2 border-emerald-500/60 rounded-xl p-4 space-y-3 relative glow-emerald">
+          <div class="flex items-start justify-between">
+            <div>
+              <span class="text-[11px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">● 运行中</span>
+              <h3 class="font-bold text-base text-slate-100 mt-2 font-mono">Qwen3.8-27B</h3>
+            </div>
+            <span class="text-xs px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 font-mono border border-blue-500/20">vLLM</span>
+          </div>
+
+          <div class="grid grid-cols-3 gap-2 text-xs font-mono bg-slate-950 p-2.5 rounded-lg border border-slate-800 text-slate-400">
+            <div><span>TP:</span> <b class="text-slate-200">8 卡</b></div>
+            <div><span>Port:</span> <b class="text-slate-200">8000</b></div>
+            <div><span>PID:</span> <b class="text-slate-200">308821</b></div>
+          </div>
+
+          <div class="flex items-center justify-between pt-2 border-t border-slate-800 text-xs">
+            <div class="flex gap-2">
+              <button class="text-slate-400 hover:text-slate-200 text-[11px] underline">脚本</button>
+              <button class="text-slate-400 hover:text-slate-200 text-[11px] underline">Compose</button>
+              <button class="text-indigo-400 hover:text-indigo-300 text-[11px] underline">日志</button>
+            </div>
+            <button class="px-2.5 py-1 bg-rose-600/20 text-rose-300 border border-rose-600/40 rounded text-xs">停止</button>
+          </div>
+        </div>
+
+        <!-- 待机卡片 1 -->
+        <div class="bg-slate-900/60 border border-slate-800 rounded-xl p-4 space-y-3 hover:border-slate-700 transition opacity-80 hover:opacity-100">
+          <div class="flex items-start justify-between">
+            <div>
+              <span class="text-[11px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700">待机中</span>
+              <h3 class="font-bold text-base text-slate-200 mt-2 font-mono">DeepSeek-V4-Flash</h3>
+            </div>
+            <span class="text-xs px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 font-mono border border-blue-500/20">vLLM</span>
+          </div>
+
+          <div class="grid grid-cols-3 gap-2 text-xs font-mono bg-slate-950 p-2.5 rounded-lg border border-slate-800 text-slate-500">
+            <div><span>TP:</span> <b class="text-slate-300">4 卡</b></div>
+            <div><span>Port:</span> <b class="text-slate-300">8000</b></div>
+            <div><span>状态:</span> <b class="text-slate-400">已就绪</b></div>
+          </div>
+
+          <div class="flex items-center justify-between pt-2 border-t border-slate-800 text-xs">
+            <div class="flex gap-2">
+              <button class="text-slate-400 hover:text-slate-200 text-[11px] underline">脚本</button>
+              <button class="text-slate-400 hover:text-slate-200 text-[11px] underline">Compose</button>
+            </div>
+            <button class="px-3 py-1 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 rounded text-xs font-semibold">
+              <i class="fa-solid fa-play text-[9px] mr-1"></i>启动
+            </button>
+          </div>
+        </div>
+
+        <!-- 待机卡片 2 -->
+        <div class="bg-slate-900/60 border border-slate-800 rounded-xl p-4 space-y-3 hover:border-slate-700 transition opacity-80 hover:opacity-100">
+          <div class="flex items-start justify-between">
+            <div>
+              <span class="text-[11px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700">待机中</span>
+              <h3 class="font-bold text-base text-slate-200 mt-2 font-mono">MiniMax-M2.5-W8A8</h3>
+            </div>
+            <span class="text-xs px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 font-mono border border-blue-500/20">vLLM</span>
+          </div>
+
+          <div class="grid grid-cols-3 gap-2 text-xs font-mono bg-slate-950 p-2.5 rounded-lg border border-slate-800 text-slate-500">
+            <div><span>TP:</span> <b class="text-slate-300">4 卡</b></div>
+            <div><span>Port:</span> <b class="text-slate-300">8000</b></div>
+            <div><span>状态:</span> <b class="text-slate-400">已就绪</b></div>
+          </div>
+
+          <div class="flex items-center justify-between pt-2 border-t border-slate-800 text-xs">
+            <div class="flex gap-2">
+              <button class="text-slate-400 hover:text-slate-200 text-[11px] underline">脚本</button>
+              <button class="text-slate-400 hover:text-slate-200 text-[11px] underline">Compose</button>
+            </div>
+            <button class="px-3 py-1 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 rounded text-xs font-semibold">
+              <i class="fa-solid fa-play text-[9px] mr-1"></i>启动
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- 方案 C：AWS SageMaker 极简风（主页纯净无干扰，待机服务以侧边浮层抽屉按需拉起） -->
+    <!-- ========================================================================= -->
+    <div id="scheme-c" class="scheme-view hidden space-y-6">
+      
+      <!-- 顶部轻量操作栏 -->
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-base font-bold text-slate-100 flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+            当前活跃推理服务 (Active Endpoints)
+          </h2>
+          <p class="text-xs text-slate-400 mt-0.5">主工作区只聚焦展示正在运行、占用算力资源的大模型服务</p>
+        </div>
+
+        <!-- 极速拉起新服务按钮 (带数量徽标) -->
+        <div class="flex items-center gap-3">
+          <button onclick="toggleDrawerC()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold flex items-center gap-2 shadow-lg glow-indigo transition cursor-pointer">
+            <i class="fa-solid fa-plus"></i>
+            <span>拉起待机服务 (5 个就绪)</span>
+          </button>
+          <button class="px-3 py-2 bg-rose-950/80 hover:bg-rose-900 text-rose-300 border border-rose-800/60 rounded-xl text-xs font-medium">
+            停止全部容器
+          </button>
+        </div>
+      </div>
+
+      <!-- 宽幅大卡片：运行中实例全透视 -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4 shadow-sm">
+        <div class="flex items-center justify-between pb-4 border-b border-slate-800">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 font-bold text-sm">
+              vLLM
+            </div>
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="font-bold text-base text-slate-100 font-mono">Qwen3.8-27B</span>
+                <span class="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 text-xs border border-emerald-500/30">● RUNNING</span>
+              </div>
+              <p class="text-xs text-slate-400 mt-0.5 font-mono">cr.metax-tech.com/public-ai-release/maca/modelzoo.llm.vllm:1.0.3</p>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <button class="px-3 py-1.5 bg-indigo-600/20 text-indigo-300 rounded-lg text-xs border border-indigo-500/40 font-medium">
+              <i class="fa-solid fa-scroll mr-1.5"></i>实时日志终端
+            </button>
+            <button class="px-3 py-1.5 bg-rose-600/20 text-rose-300 rounded-lg text-xs border border-rose-600/40 font-medium">
+              <i class="fa-solid fa-power-off mr-1.5"></i>停止实例
+            </button>
+          </div>
+        </div>
+
+        <!-- 详细指标网格 -->
+        <div class="grid grid-cols-4 gap-3 text-xs font-mono">
+          <div class="bg-slate-950 p-3 rounded-xl border border-slate-800/80">
+            <span class="text-slate-500 block mb-1">占用 GPU 卡号</span>
+            <span class="text-indigo-300 font-bold">GPU 0, 1, 2, 3 (4卡 TP)</span>
+          </div>
+          <div class="bg-slate-950 p-3 rounded-xl border border-slate-800/80">
+            <span class="text-slate-500 block mb-1">推理显存占用</span>
+            <span class="text-rose-400 font-bold">184.8 GB (单卡 46.2G)</span>
+          </div>
+          <div class="bg-slate-950 p-3 rounded-xl border border-slate-800/80">
+            <span class="text-slate-500 block mb-1">OpenAI API 端口</span>
+            <span class="text-slate-200 font-bold">http://0.0.0.0:8000</span>
+          </div>
+          <div class="bg-slate-950 p-3 rounded-xl border border-slate-800/80">
+            <span class="text-slate-500 block mb-1">宿主机 PID</span>
+            <span class="text-slate-200 font-bold">308821 (Worker 活跃)</span>
+          </div>
+        </div>
+
+        <div class="flex gap-3 pt-2">
+          <button class="px-3 py-1.5 bg-slate-950 text-slate-300 rounded-lg border border-slate-800 text-xs font-mono"><i class="fa-solid fa-file-lines mr-1.5"></i>start_vllm_qwen3_8_27b.sh</button>
+          <button class="px-3 py-1.5 bg-slate-950 text-slate-300 rounded-lg border border-slate-800 text-xs font-mono"><i class="fa-brands fa-docker mr-1.5"></i>docker-compose-models.yml</button>
+        </div>
+      </div>
+
+      <!-- 方案 C 抽屉浮窗 (点击右上角拉起) -->
+      <div id="drawer-c" class="fixed inset-y-0 right-0 w-96 bg-slate-900 border-l border-slate-800 shadow-2xl p-5 z-50 flex flex-col space-y-4 transition-transform translate-x-full">
+        <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+          <div>
+            <h3 class="font-bold text-sm text-slate-100">待机模型快速拉起坞</h3>
+            <p class="text-xs text-slate-400">选择要部署至 GPU 的模型</p>
+          </div>
+          <button onclick="toggleDrawerC()" class="p-1 text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+
+        <input type="text" placeholder="搜索模型..." class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none">
+
+        <div class="space-y-2.5 flex-1 overflow-y-auto pr-1">
+          <div class="bg-slate-950 border border-slate-800 rounded-xl p-3.5 space-y-2.5">
+            <div class="flex justify-between items-start">
+              <div>
+                <div class="font-bold text-xs text-slate-100 font-mono">DeepSeek-V4-Flash-W8A8</div>
+                <div class="text-[11px] text-slate-400 font-mono mt-0.5">TP=4 · Port 8000 · vLLM</div>
+              </div>
+              <button class="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-xs font-semibold">
+                拉起
+              </button>
+            </div>
+            <div class="flex gap-2 text-[11px] text-slate-500 font-mono">
+              <span>脚本: start_vllm_dsv4.sh</span>
+            </div>
+          </div>
+
+          <div class="bg-slate-950 border border-slate-800 rounded-xl p-3.5 space-y-2.5">
+            <div class="flex justify-between items-start">
+              <div>
+                <div class="font-bold text-xs text-slate-100 font-mono">MiniMax-M2.5-W8A8</div>
+                <div class="text-[11px] text-slate-400 font-mono mt-0.5">TP=4 · Port 8000 · vLLM</div>
+              </div>
+              <button class="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-xs font-semibold">
+                拉起
+              </button>
+            </div>
+            <div class="flex gap-2 text-[11px] text-slate-500 font-mono">
+              <span>脚本: start_vllm_minimax.sh</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- 交互脚本 -->
+  <script>
+    const schemes = {
+      'scheme-a': {
+        title: '方案 A：左侧独立待机坞 + 右侧主工作画卷 (Portainer 经典云原生架构)',
+        desc: '<b>设计逻辑</b>：左侧设立固定宽度的「待机模型资源库」，以紧凑微卡形式展示待机模型；右侧自适应铺满「GPU 算力拓扑大盘」与「运行中容器深度操作区」。左右职责彻底分离，左选右控。'
+      },
+      'scheme-b': {
+        title: '方案 B：全景统一数据看板 (Ray Dashboard / Datadog 风格)',
+        desc: '<b>设计逻辑</b>：完全摒弃左右分割。顶部使用「全部 / 运行中 / 待机」状态过滤器，下方采用规整的 3 列一体化卡片网格。运行中卡片高亮发光，待机卡片低调半透明，视觉最宽敞统一。'
+      },
+      'scheme-c': {
+        title: '方案 C：主屏纯净聚焦 + 右侧滑出式部署抽屉 (AWS SageMaker / HuggingFace 风格)',
+        desc: '<b>设计逻辑</b>：主界面只展示「当前占用 GPU 显存的运行中实例」，零多余干扰；需要拉起新模型时，点击右上角「+ 拉起待机服务」，从右侧优雅滑出待机模型抽屉。'
+      }
+    };
+
+    function switchScheme(id) {
+      document.querySelectorAll('.scheme-view').forEach(el => el.classList.add('hidden'));
+      document.getElementById(id).classList.remove('hidden');
+
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.remove('bg-indigo-600', 'text-white', 'shadow');
+        btn.classList.add('text-slate-400');
+      });
+      const activeBtn = document.getElementById('btn-' + id);
+      activeBtn.classList.add('bg-indigo-600', 'text-white', 'shadow');
+      activeBtn.classList.remove('text-slate-400');
+
+      document.getElementById('scheme-title').innerText = schemes[id].title;
+      document.getElementById('scheme-summary').innerHTML = schemes[id].desc;
+    }
+
+    function toggleDrawerC() {
+      const d = document.getElementById('drawer-c');
+      d.classList.toggle('translate-x-full');
+    }
+  </script>
+</body>
+</html>
