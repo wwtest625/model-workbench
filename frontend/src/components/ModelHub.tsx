@@ -458,8 +458,8 @@ export const ModelHub: React.FC<ModelHubProps> = ({ openConfirm, showToast }) =>
             <Search className="w-5 h-5 text-slate-400" /> Model Hub
           </h2>
           <p className="text-sm text-slate-400 mt-1 font-mono">
-            已存模型 <span className="text-slate-200 font-semibold">{aggregatedAssets.length}</span> · 76 ({mainOnlyCount}) · test03 ({archiveOnlyCount})
-            {duplicateCount > 0 && <span className="ml-2 text-slate-300">· 重复副本 ({duplicateCount})</span>}
+            已存模型 <span className="text-slate-200 font-semibold">{aggregatedAssets.length}</span> · 76 ({mainOnlyCount}) · 29 ({archiveOnlyCount})
+            {duplicateCount > 0 && <span className="ml-2 text-slate-300">· 双端副本 ({duplicateCount})</span>}
           </p>
         </div>
 
@@ -702,12 +702,12 @@ export const ModelHub: React.FC<ModelHubProps> = ({ openConfirm, showToast }) =>
                           </span>
                         </span>
                       ) : item.local_status === 'LOCAL_76' ? (
-                        <span className="text-xs px-2.5 py-0.5 rounded font-mono bg-emerald-950/80 text-emerald-300 border border-emerald-800/80 flex items-center gap-1.5 font-medium">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" /> 76 已存
+                        <span className="text-xs px-2 py-0.5 rounded font-mono bg-emerald-950/80 text-emerald-300 border border-emerald-800/80 flex items-center gap-1.5 font-medium">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" /> 已存 <span className="px-1 py-0.2 rounded bg-emerald-500/20 text-[10px] font-bold text-emerald-200">76</span>
                         </span>
                       ) : item.local_status === 'LOCAL_TEST03' ? (
-                        <span className="text-xs px-2.5 py-0.5 rounded font-mono bg-slate-800 text-slate-300 border border-slate-700/80 flex items-center gap-1.5 font-medium">
-                          <span className="w-1.5 h-1.5 rounded-full bg-slate-400 inline-block" /> test03 存档
+                        <span className="text-xs px-2 py-0.5 rounded font-mono bg-cyan-950/80 text-cyan-300 border border-cyan-800/80 flex items-center gap-1.5 font-medium">
+                          <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 inline-block" /> 已存 <span className="px-1 py-0.2 rounded bg-cyan-500/20 text-[10px] font-bold text-cyan-200">29</span>
                         </span>
                       ) : (
                         <span className="text-xs px-2.5 py-0.5 rounded font-mono bg-slate-950 text-slate-500 border border-slate-800/80 flex items-center gap-1.5">
@@ -855,20 +855,20 @@ export const ModelHub: React.FC<ModelHubProps> = ({ openConfirm, showToast }) =>
                             <Terminal className="w-4 h-4" />
                           </button>
                         </>
-                      ) : item.local_status === 'LOCAL_76' ? (
+                      ) : (item.local_status === 'LOCAL_76' || item.local_status === 'LOCAL_TEST03') ? (
                         <>
                           <button
                             onClick={() => openDistributeModal(item)}
                             className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-lg text-xs flex items-center gap-1.5 transition cursor-pointer shadow-md shadow-emerald-900/20"
-                            title="一键分发到 146 或 55 算力机"
+                            title="一键将本地模型分发到 146 或 55 算力机"
                           >
                             <Send className="w-3.5 h-3.5" />
                             <span>分发到算力机</span>
                           </button>
                           <button
-                            onClick={() => handleCopy(item.local_path || `/data/AI_model/${item.name}`, item.id)}
+                            onClick={() => handleCopy(item.local_path || (item.local_status === 'LOCAL_76' ? `/data/AI_model/${item.name}` : `/HDD_Raid/SVN_MODEL_REPO/Model/${item.name}`), item.id)}
                             className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs border border-slate-700 transition cursor-pointer"
-                            title="复制 76 存储路径"
+                            title={item.local_status === 'LOCAL_76' ? '复制 76 存储路径' : '复制 29 存储路径'}
                           >
                             {copiedId === item.id ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                           </button>
@@ -934,7 +934,7 @@ export const ModelHub: React.FC<ModelHubProps> = ({ openConfirm, showToast }) =>
                     : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-slate-200'
                 }`}
               >
-                test03 存档 ({archiveOnlyCount})
+                29 存档 ({archiveOnlyCount})
               </button>
               {duplicateCount > 0 && (
                 <button
@@ -991,15 +991,15 @@ export const ModelHub: React.FC<ModelHubProps> = ({ openConfirm, showToast }) =>
                     <div className="flex items-center gap-2.5 flex-wrap">
                       <span className="font-semibold text-slate-100 text-sm">{ast.name}</span>
 
-                      {/* 存储分布徽章 */}
+                      {/* 存储分布徽章 (统一为已存 + 机器标签) */}
                       {ast.hasMain && (
-                        <span className="text-xs px-2 py-0.5 rounded font-mono bg-emerald-950/80 text-emerald-300 border border-emerald-800/80 font-medium">
-                          76 主力
+                        <span className="text-xs px-2 py-0.5 rounded font-mono bg-emerald-950/80 text-emerald-300 border border-emerald-800/80 flex items-center gap-1 font-medium">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" /> 已存 <strong className="text-emerald-200">76</strong>
                         </span>
                       )}
                       {ast.hasArchive && (
-                        <span className="text-xs px-2 py-0.5 rounded font-mono bg-slate-800 text-slate-300 border border-slate-700 font-medium">
-                          test03 历史
+                        <span className="text-xs px-2 py-0.5 rounded font-mono bg-cyan-950/80 text-cyan-300 border border-cyan-800/80 flex items-center gap-1 font-medium">
+                          <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" /> 已存 <strong className="text-cyan-200">29</strong>
                         </span>
                       )}
 
