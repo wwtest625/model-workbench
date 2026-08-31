@@ -478,8 +478,13 @@ func (m *ModelManager) SaveScriptContent(scriptName, content string) error {
 		return err
 	}
 	clean := filepath.Base(scriptName)
-	b64 := base64.StdEncoding.EncodeToString([]byte(content))
-	cmd := fmt.Sprintf("echo '%s' | base64 -d > %s/%s && chmod +x %s/%s", b64, h.Workspace, clean, h.Workspace, clean)
+
+	// 强制清洗所有 Windows CRLF 换行符 (\r\n 与 \r 全部转为纯净 Unix \n)
+	cleanContent := strings.ReplaceAll(content, "\r\n", "\n")
+	cleanContent = strings.ReplaceAll(cleanContent, "\r", "")
+
+	b64 := base64.StdEncoding.EncodeToString([]byte(cleanContent))
+	cmd := fmt.Sprintf("echo '%s' | base64 -d | tr -d '\\r' > %s/%s && chmod +x %s/%s", b64, h.Workspace, clean, h.Workspace, clean)
 	_, err = runner.RunCmd(h.SSHAlias, cmd, 10)
 	return err
 }
@@ -509,8 +514,8 @@ func (m *ModelManager) StartModel(serviceOrScript string) error {
 		return err
 	}
 
-	cmd := fmt.Sprintf("cd %s && (docker compose -f docker-compose-models.yml up -d %s 2>/dev/null || docker start %s 2>/dev/null || (chmod +x %s 2>/dev/null && bash %s > /tmp/model_start.log 2>&1 & echo 'STARTED_VIA_SCRIPT'))",
-		h.Workspace, serviceOrScript, serviceOrScript, serviceOrScript, serviceOrScript)
+	cmd := fmt.Sprintf("cd %s && (docker compose -f docker-compose-models.yml up -d %s 2>/dev/null || docker start %s 2>/dev/null || (sed -i 's/\\r$//' %s 2>/dev/null; chmod +x %s 2>/dev/null && bash %s > /tmp/model_start.log 2>&1 & echo 'STARTED_VIA_SCRIPT'))",
+		h.Workspace, serviceOrScript, serviceOrScript, serviceOrScript, serviceOrScript, serviceOrScript)
 
 	_, err = runner.RunCmd(h.SSHAlias, cmd, 15)
 	return err
@@ -552,7 +557,8 @@ func (m *ModelManager) RestartModel(serviceName, containerName string) error {
 	}
 
 	cleanTarget := strings.TrimSpace(target)
-	cmd := fmt.Sprintf("docker restart %s", cleanTarget)
+	// 在重启前防御性清洗工作空间内脚本的 Windows 换行符，避免因脚本包含 \r 导致容器重启后解析报错
+	cmd := fmt.Sprintf("find %s -maxdepth 2 -name '*.sh' -exec sed -i 's/\\r$//' {} + 2>/dev/null || true; docker restart %s", h.Workspace, cleanTarget)
 	res, err := runner.RunCmd(h.SSHAlias, cmd, 35)
 	if err != nil {
 		return fmt.Errorf("重启命令执行失败: %v", err)

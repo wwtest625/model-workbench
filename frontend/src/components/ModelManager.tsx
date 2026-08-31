@@ -268,18 +268,19 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
 
   const handleSaveScript = async (newCode: string): Promise<boolean> => {
     if (!activeModel) return false
+    const sanitizedCode = (newCode || '').replace(/\r\n/g, '\n').replace(/\r/g, '')
     try {
       const res = await fetch('/api/v1/models/script', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: activeModel.script,
-          content: newCode
+          content: sanitizedCode
         })
       })
       if (res.ok) {
-        setModal((prev) => ({ ...prev, content: newCode }))
-        if (showToast) showToast(`脚本 ${activeModel.script} 保存成功`, 'success')
+        setModal((prev) => ({ ...prev, content: sanitizedCode }))
+        if (showToast) showToast(`脚本 ${activeModel.script} 保存成功 (已自动标准化 Unix 换行)`, 'success')
         return true
       } else {
         if (showToast) showToast('脚本保存失败', 'error')

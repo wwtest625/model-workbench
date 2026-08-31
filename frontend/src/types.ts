@@ -103,6 +103,7 @@ export interface DownloadTask {
   local_path: string
   dir_size: string
   total_size?: string
+  transferred?: string
   progress: number
   speed?: string
   eta?: string

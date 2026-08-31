@@ -4,10 +4,11 @@ import { LogFile } from '../types'
 
 interface LogArchiveProps {
   logs: LogFile[]
-  workspace: string
+  workspace?: string
+  onRefresh?: () => void
 }
 
-export const LogArchive: React.FC<LogArchiveProps> = ({ logs, workspace }) => {
+export const LogArchive: React.FC<LogArchiveProps> = ({ logs, workspace = '/home/workspace' }) => {
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4 shadow-sm">
       <div className="flex items-center justify-between">
