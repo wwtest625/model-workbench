@@ -537,6 +537,32 @@ func (m *ModelManager) StopModel(serviceName, containerName string) error {
 	return err
 }
 
+func (m *ModelManager) RestartModel(serviceName, containerName string) error {
+	h, err := host.GetHostManager().GetCurrentHost()
+	if err != nil {
+		return err
+	}
+
+	target := containerName
+	if target == "" {
+		target = serviceName
+	}
+	if target == "" {
+		return fmt.Errorf("未指定要重启的容器名称")
+	}
+
+	cleanTarget := strings.TrimSpace(target)
+	cmd := fmt.Sprintf("docker restart %s", cleanTarget)
+	res, err := runner.RunCmd(h.SSHAlias, cmd, 35)
+	if err != nil {
+		return fmt.Errorf("重启命令执行失败: %v", err)
+	}
+	if !res.OK {
+		return fmt.Errorf("重启容器失败: %s", res.Stderr)
+	}
+	return nil
+}
+
 func (m *ModelManager) StopAllModels() error {
 	h, err := host.GetHostManager().GetCurrentHost()
 	if err != nil {

@@ -68,6 +68,7 @@ func SetupRouter() *gin.Engine {
 		// 模型服务与编排
 		v1.GET("/models", getModels)
 		v1.POST("/models/start", startModel)
+		v1.POST("/models/restart", restartModel)
 		v1.POST("/models/stop", stopSingleModel)
 		v1.POST("/models/stop-all", stopAllModels)
 		v1.GET("/models/script", getModelScript)
@@ -247,6 +248,23 @@ func stopSingleModel(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("已停止模型 %s 容器", req.Name)})
+}
+
+func restartModel(c *gin.Context) {
+	var req StopSingleReq
+	_ = c.ShouldBindJSON(&req)
+	target := req.ContainerName
+	if target == "" {
+		target = req.ServiceName
+	}
+	if target == "" {
+		target = req.Name
+	}
+	if err := model.GetModelManager().RestartModel(req.ServiceName, req.ContainerName); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("容器 %s 已成功重启", target)})
 }
 
 func stopAllModels(c *gin.Context) {

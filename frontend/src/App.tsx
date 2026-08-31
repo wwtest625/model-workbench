@@ -208,6 +208,44 @@ export default function App() {
     })
   }
 
+  // 重启单容器服务确认
+  const handleRestartModel = (m: ModelCard) => {
+    const cName = m.container_name || m.service_name || m.name
+    openConfirm({
+      title: '重启模型容器确认',
+      message: '确定要重启【' + m.name + '】容器吗？',
+      detail: '将执行 docker restart ' + cName + '，重新加载启动脚本与配置文件。',
+      confirmText: '确认重启',
+      type: 'warning',
+      onConfirm: async () => {
+        showToast('正在重启【' + m.name + '】容器...', 'info')
+        setOperatingModel(true)
+        try {
+          const res = await fetch('/api/v1/models/restart', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name: m.name,
+              service_name: m.service_name,
+              container_name: m.container_name
+            })
+          })
+          const data = await res.json()
+          if (res.ok) {
+            showToast(data.message || '【' + m.name + '】容器重启成功', 'success')
+            setTimeout(fetchModels, 2000)
+          } else {
+            showToast(data.error || '重启失败', 'error')
+          }
+        } catch (e: any) {
+          showToast('重启失败: ' + e.message, 'error')
+        } finally {
+          setOperatingModel(false)
+        }
+      }
+    })
+  }
+
   // 停止全部服务确认 (高危操作)
   const handleStopAll = () => {
     openConfirm({
@@ -355,6 +393,7 @@ export default function App() {
             models={models}
             operatingModel={operatingModel}
             onStartModel={handleStartModel}
+            onRestartModel={handleRestartModel}
             onStopModel={handleStopModel}
             onStopAll={handleStopAll}
             showToast={showToast}

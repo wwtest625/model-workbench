@@ -32,6 +32,7 @@ interface ModelManagerProps {
   models: ModelCard[]
   operatingModel: boolean
   onStartModel: (model: ModelCard) => void
+  onRestartModel?: (model: ModelCard) => void
   onStopModel: (model: ModelCard) => void
   onStopAll: () => void
   showToast?: (msg: string, type: 'success' | 'error' | 'info') => void
@@ -41,6 +42,7 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
   models,
   operatingModel,
   onStartModel,
+  onRestartModel,
   onStopModel,
   onStopAll,
   showToast
@@ -561,6 +563,16 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
                       >
                         <ScrollText className="w-3.5 h-3.5 text-slate-400" />
                         <span className="hidden sm:inline">日志</span>
+                      </button>
+
+                      <button
+                        onClick={() => (onRestartModel ? onRestartModel(m) : undefined)}
+                        disabled={operatingModel}
+                        className="px-2.5 py-1 bg-amber-600/20 hover:bg-amber-600/30 border border-amber-600/40 text-amber-300 rounded text-xs font-medium flex items-center gap-1 transition cursor-pointer disabled:opacity-50"
+                        title="重启当前容器 (重载脚本与配置)"
+                      >
+                        <RotateCw className="w-3 h-3 text-amber-400" />
+                        <span>重启</span>
                       </button>
 
                       <button
