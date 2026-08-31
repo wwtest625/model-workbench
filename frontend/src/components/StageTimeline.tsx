@@ -93,7 +93,7 @@ export const analyzeLifecycleLogs = (logs: string, modelStatus?: string): Lifecy
       shortName: '服务就绪',
       color: '#10b981',
       icon: 'CheckCircle2',
-      match: /(Uvicorn running on|Application startup complete|Route: \/v1\/chat\/completions|Serving on|Ready for requests|Started server process|GET \/v1\/models|POST \/v1\/chat\/completions|HTTP\/1\.1" 200)/i
+      match: /(Uvicorn running on http|Application startup complete|Route: \/v1\/chat\/completions|The server is ready to accept requests|ready to accept incoming|HTTP\/1\.1" 200)/i
     }
   ]
 

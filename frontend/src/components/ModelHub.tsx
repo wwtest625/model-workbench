@@ -108,13 +108,41 @@ export const ModelHub: React.FC<ModelHubProps> = ({ openConfirm, showToast }) =>
   const prevTasksCountRef = useRef(0)
   const prevRsyncCountRef = useRef(0)
 
-  const orgOptions = [
-    { id: 'metax-tech', name: 'metax-tech' },
+  const [customOrgs, setCustomOrgs] = useState<string[]>([])
+  const [showAddOrg, setShowAddOrg] = useState(false)
+  const [newOrgInput, setNewOrgInput] = useState('')
+
+  const defaultOrgOptions = [
+    { id: 'metax-tech', name: 'metax-tech (沐曦)' },
     { id: 'Qwen', name: 'Qwen' },
     { id: 'deepseek-ai', name: 'deepseek-ai' },
     { id: 'ZhipuAI', name: 'ZhipuAI' },
-    { id: 'MiniMax', name: 'MiniMax' }
+    { id: 'MiniMax', name: 'MiniMax' },
+    { id: '01-ai', name: '01-ai' },
+    { id: 'OTHER', name: '🌐 全网 / Other' }
   ]
+
+  const orgOptions = useMemo(() => {
+    const list = [...defaultOrgOptions]
+    for (const c of customOrgs) {
+      if (!list.some((o) => o.id.toLowerCase() === c.toLowerCase())) {
+        list.splice(list.length - 1, 0, { id: c, name: c })
+      }
+    }
+    return list
+  }, [customOrgs])
+
+  const handleAddCustomOrg = (e: React.FormEvent) => {
+    e.preventDefault()
+    const trimmed = newOrgInput.trim()
+    if (!trimmed) return
+    if (!customOrgs.includes(trimmed)) {
+      setCustomOrgs((prev) => [...prev, trimmed])
+    }
+    setSelectedOrg(trimmed)
+    setNewOrgInput('')
+    setShowAddOrg(false)
+  }
 
   const fetchDownloadTasks = async () => {
     try {
@@ -623,15 +651,53 @@ export const ModelHub: React.FC<ModelHubProps> = ({ openConfirm, showToast }) =>
                   key={org.id}
                   onClick={() => setSelectedOrg(org.id)}
                   className={
-                    'px-3 py-1.5 rounded-md text-xs font-mono transition border cursor-pointer ' +
+                    'px-3 py-1.5 rounded-md text-xs font-mono transition border cursor-pointer flex items-center gap-1 ' +
                     (selectedOrg === org.id
-                      ? 'bg-slate-800 text-slate-100 border-slate-600 font-semibold'
+                      ? org.id === 'OTHER'
+                        ? 'bg-indigo-950/80 text-indigo-200 border-indigo-500/80 font-semibold shadow-sm'
+                        : 'bg-slate-800 text-slate-100 border-slate-600 font-semibold'
+                      : org.id === 'OTHER'
+                      ? 'bg-slate-950 text-indigo-300/80 border-indigo-950/60 hover:text-indigo-200 hover:border-indigo-800'
                       : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-slate-200 hover:border-slate-700')
                   }
                 >
                   {org.name}
                 </button>
               ))}
+
+              {showAddOrg ? (
+                <form onSubmit={handleAddCustomOrg} className="flex items-center gap-1">
+                  <input
+                    type="text"
+                    value={newOrgInput}
+                    onChange={(e) => setNewOrgInput(e.target.value)}
+                    placeholder="输入 ModelScope 组织/作者名..."
+                    autoFocus
+                    className="px-2.5 py-1 bg-slate-950 border border-slate-700 rounded text-xs text-slate-200 font-mono focus:outline-none focus:border-cyan-500 w-44"
+                  />
+                  <button
+                    type="submit"
+                    className="px-2 py-1 bg-cyan-700 hover:bg-cyan-600 text-slate-100 rounded text-xs font-medium cursor-pointer"
+                  >
+                    确定
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddOrg(false)}
+                    className="px-1.5 py-1 text-slate-400 hover:text-slate-200 text-xs cursor-pointer"
+                  >
+                    取消
+                  </button>
+                </form>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setShowAddOrg(true)}
+                  className="px-2.5 py-1.5 rounded-md text-xs font-mono transition border border-dashed border-slate-700 text-slate-400 hover:text-slate-200 hover:border-slate-500 bg-slate-950/50 cursor-pointer"
+                >
+                  + 自定义组织
+                </button>
+              )}
             </div>
 
             <form onSubmit={(e) => handleSearch(e, true)} className="flex gap-3">
@@ -641,7 +707,11 @@ export const ModelHub: React.FC<ModelHubProps> = ({ openConfirm, showToast }) =>
                   type="text"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="搜索模型名称（如 Qwen3.8, DeepSeek, GLM...）"
+                  placeholder={
+                    selectedOrg === 'OTHER'
+                      ? '全网关键词检索（支持任意组织、作者或模型，如 internlm, baichuan, 01-ai, bge, llama...）'
+                      : `搜索 ${selectedOrg} 下的模型名称（留空按回车刷新全部）...`
+                  }
                   className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-10 pr-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-slate-600 font-mono"
                 />
               </div>

@@ -197,11 +197,10 @@ func normalizeStrict(s string) string {
 // SearchModelScope 远程查询 ModelScope 并智能关联本地存储状态
 func (h *HubManager) SearchModelScope(query string, org string, pageSize int) ([]HubModelItem, error) {
 	if pageSize <= 0 {
-		pageSize = 25
+		pageSize = 30
 	}
-	if org == "" {
-		org = "metax-tech"
-	}
+	org = strings.TrimSpace(org)
+	query = strings.TrimSpace(query)
 
 	localAssets, _ := h.ScanLocalAssets(false)
 
@@ -210,13 +209,34 @@ python3 -c '
 import json
 from modelscope.hub.api import HubApi
 api = HubApi()
-org = "%s"
-query = "%s".lower()
+org = "%s".strip()
+query = "%s".strip()
+pageSize = %d
+models = []
 try:
-    res = api.list_models(owner_or_group=org, page_size=%d)
-    models = res.get("Models", [])
-    if query and query != "all":
-        models = [m for m in models if query in m.get("Name", "").lower() or query in m.get("Id", "").lower()]
+    if org and org.upper() not in ["ALL", "OTHER"]:
+        page = api.list_repos("model", owner=org, search=query if query and query.lower() != "all" else None, page_size=pageSize)
+    else:
+        page = api.list_repos("model", search=query if query and query.lower() != "all" else None, page_size=pageSize)
+    
+    for item in page.items:
+        d = item.to_dict()
+        mid = d.get("id", "")
+        parts = mid.split("/", 1)
+        owner_name = parts[0] if len(parts) > 1 else ""
+        repo_name = parts[1] if len(parts) > 1 else mid
+        
+        models.append({
+            "Id": mid,
+            "Name": repo_name,
+            "DisplayName": d.get("display_name") or repo_name,
+            "Owner": owner_name,
+            "Description": d.get("description", ""),
+            "Downloads": d.get("downloads", 0),
+            "UpdatedAt": d.get("last_modified") or d.get("created_at", ""),
+            "file_size": d.get("file_size", 0),
+            "Tags": d.get("tags", [])
+        })
     print(json.dumps(models, default=str, ensure_ascii=False))
 except Exception as e:
     print(json.dumps({"error": str(e)}))

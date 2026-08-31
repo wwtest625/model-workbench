@@ -1,5 +1,6 @@
 # Binaries and build artifacts
 metax-station
+model-workbench
 backend/cmd/server/dist
 backend/metax-server
 dist/

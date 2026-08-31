@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import {
   Play,
   Square,
@@ -18,9 +18,13 @@ import {
   Layers,
   Activity,
   AlertCircle,
-  Zap
+  Zap,
+  Disc,
+  Tag,
+  Check,
+  HardDrive
 } from 'lucide-react'
-import { ModelCard, ModalState } from '../types'
+import { ModelCard, ModalState, DockerImageItem } from '../types'
 import { CodeEditor } from './CodeEditor'
 import { DockTerminalPanel, DockTab } from './DockTerminalPanel'
 
@@ -51,7 +55,7 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
   })
   const [activeModel, setActiveModel] = useState<ModelCard | null>(null)
 
-  // 状态切片 Tab: 运行中 (READY / WARMING_UP / LOADING_WEIGHTS / INIT / LOADING / RUNNING) / 未启动 (STOPPED / FAILED)
+  // 状态切片 Tab: 运行中 / 未启动 / 本地镜像
   const isModelActive = (s: string) => s === 'READY' || s === 'WARMING_UP' || s === 'LOADING_WEIGHTS' || s === 'INIT' || s === 'LOADING' || s === 'RUNNING'
   const runningModels = models.filter((m) => isModelActive(m.status))
   const stoppedModels = models.filter((m) => !isModelActive(m.status))
@@ -59,9 +63,42 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
   const loadingCount = models.filter((m) => m.status === 'WARMING_UP' || m.status === 'LOADING_WEIGHTS' || m.status === 'INIT' || m.status === 'LOADING').length
   const failedCount = models.filter((m) => m.status === 'FAILED').length
 
-  const [statusTab, setStatusTab] = useState<'RUNNING' | 'STOPPED'>('RUNNING')
+  const [statusTab, setStatusTab] = useState<'RUNNING' | 'STOPPED' | 'IMAGES'>('RUNNING')
   const [searchQuery, setSearchQuery] = useState('')
   const [expandedModels, setExpandedModels] = useState<Record<string, boolean>>({})
+
+  // 本地镜像状态
+  const [images, setImages] = useState<DockerImageItem[]>([])
+  const [loadingImages, setLoadingImages] = useState<boolean>(false)
+  const [copiedImageName, setCopiedImageName] = useState<string | null>(null)
+  const [expandedRepos, setExpandedRepos] = useState<Record<string, boolean>>({})
+
+  const fetchHostImages = async () => {
+    setLoadingImages(true)
+    try {
+      const res = await fetch('/api/v1/models/images')
+      const data = await res.json()
+      setImages(data.images || [])
+    } catch (e: any) {
+      if (showToast) showToast('获取本地镜像列表失败: ' + e.message, 'error')
+    } finally {
+      setLoadingImages(false)
+    }
+  }
+
+  useEffect(() => {
+    // 首次载入或切换至 IMAGES 时自动拉取镜像
+    if (statusTab === 'IMAGES' && images.length === 0) {
+      fetchHostImages()
+    }
+  }, [statusTab])
+
+  const handleCopyImage = (fullName: string) => {
+    navigator.clipboard.writeText(fullName)
+    setCopiedImageName(fullName)
+    if (showToast) showToast('已复制镜像完整地址: ' + fullName, 'success')
+    setTimeout(() => setCopiedImageName(null), 2500)
+  }
 
   const toggleExpand = (modelName: string) => {
     setExpandedModels((prev) => ({
@@ -70,7 +107,136 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
     }))
   }
 
-  // 当前 Tab 下的搜索过滤
+  const toggleExpandRepo = (repo: string) => {
+    setExpandedRepos((prev) => ({
+      ...prev,
+      [repo]: prev[repo] === undefined ? false : !prev[repo]
+    }))
+  }
+
+  const [imageFilter, setImageFilter] = useState<'ALL' | 'VLLM' | 'SGLANG' | 'IN_USE' | 'ALIAS'>('ALL')
+
+  const parseImageTraits = (fullName: string, allImages: DockerImageItem[], currentImg: DockerImageItem) => {
+    const low = fullName.toLowerCase()
+    let framework = ''
+    if (low.includes('sglang')) framework = 'SGLang'
+    else if (low.includes('vllm')) framework = 'vLLM'
+    else if (low.includes('evalscope')) framework = 'EvalScope'
+
+    let driver = ''
+    const macaMatch = fullName.match(/maca(?:\.ai|\/ai|-)?([0-9.]+)/i)
+    if (macaMatch) {
+      driver = `MACA ${macaMatch[1]}`
+    } else if (low.includes('maca')) {
+      driver = 'MACA'
+    }
+    const dtkMatch = fullName.match(/dtk([0-9.]+)/i)
+    if (dtkMatch) {
+      driver = `DTK ${dtkMatch[1]}`
+    } else if (low.includes('dtk')) {
+      driver = 'DTK'
+    }
+
+    const parts: string[] = []
+    const torchMatch = fullName.match(/torch([0-9.]+)/i)
+    const pyMatch = fullName.match(/py([0-9.]+)/i)
+    if (torchMatch) parts.push(`Torch ${torchMatch[1]}`)
+    if (pyMatch) parts.push(`Py ${pyMatch[1]}`)
+    const pythonTorch = parts.join(' · ')
+
+    let modelPatch = ''
+    if (low.includes('dsv4') || low.includes('deepseek-v4') || low.includes('deepseek')) modelPatch = 'DeepSeek-V4'
+    else if (low.includes('minimax-h3') || low.includes('minimax')) modelPatch = 'MiniMax-H3'
+    else if (low.includes('mimo')) modelPatch = 'Mimo'
+    else if (low.includes('qwen')) modelPatch = 'Qwen'
+
+    const sameIdImages = allImages.filter((img) => img.image_id === currentImg.image_id)
+    const aliasCount = sameIdImages.length
+    const aliasRepos = Array.from(new Set(sameIdImages.map((img) => img.repository).filter((r) => r !== currentImg.repository)))
+
+    return {
+      framework,
+      driver,
+      pythonTorch,
+      modelPatch,
+      aliasCount,
+      aliasRepos
+    }
+  }
+
+  const imageCounts = useMemo(() => {
+    let vllm = 0
+    let sglang = 0
+    let inUse = 0
+    let alias = 0
+
+    for (const img of images) {
+      const traits = parseImageTraits(img.full_name, images, img)
+      if (traits.framework === 'vLLM') vllm++
+      if (traits.framework === 'SGLang') sglang++
+      if (img.is_in_use) inUse++
+      if (traits.aliasCount > 1) alias++
+    }
+    return { vllm, sglang, inUse, alias }
+  }, [images])
+
+  // 镜像按 Repo 聚合
+  const repoGroups = useMemo(() => {
+    const map = new Map<string, DockerImageItem[]>()
+    for (const img of images) {
+      const repo = img.repository || '<none>'
+      if (!map.has(repo)) {
+        map.set(repo, [])
+      }
+      map.get(repo)!.push(img)
+    }
+
+    const groups: { repository: string; tagsCount: number; images: DockerImageItem[] }[] = []
+    for (const [repo, imgList] of map.entries()) {
+      groups.push({
+        repository: repo,
+        tagsCount: imgList.length,
+        images: imgList
+      })
+    }
+    return groups.sort((a, b) => a.repository.localeCompare(b.repository))
+  }, [images])
+
+  const filteredRepoGroups = useMemo(() => {
+    const q = searchQuery.toLowerCase().trim()
+    return repoGroups
+      .map((group) => {
+        const matchImages = group.images.filter((img) => {
+          const traits = parseImageTraits(img.full_name, images, img)
+          if (imageFilter === 'VLLM' && traits.framework !== 'vLLM') return false
+          if (imageFilter === 'SGLANG' && traits.framework !== 'SGLang') return false
+          if (imageFilter === 'IN_USE' && !img.is_in_use) return false
+          if (imageFilter === 'ALIAS' && traits.aliasCount <= 1) return false
+
+          if (!q) return true
+
+          return (
+            group.repository.toLowerCase().includes(q) ||
+            img.tag.toLowerCase().includes(q) ||
+            img.image_id.toLowerCase().includes(q) ||
+            img.full_name.toLowerCase().includes(q) ||
+            traits.framework.toLowerCase().includes(q) ||
+            traits.driver.toLowerCase().includes(q) ||
+            traits.pythonTorch.toLowerCase().includes(q) ||
+            traits.modelPatch.toLowerCase().includes(q) ||
+            (img.used_by && img.used_by.some((u) => u.toLowerCase().includes(q)))
+          )
+        })
+
+        if (matchImages.length > 0) {
+          return { ...group, images: matchImages, tagsCount: matchImages.length }
+        }
+        return null
+      })
+      .filter((g): g is { repository: string; tagsCount: number; images: DockerImageItem[] } => g !== null)
+  }, [repoGroups, searchQuery, imageFilter, images])
+
+  // 当前 Tab 下的模型搜索过滤
   const currentList = statusTab === 'RUNNING' ? runningModels : stoppedModels
   const filteredList = currentList.filter((m) =>
     m.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -193,7 +359,7 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
     <div className="space-y-4" style={{ paddingBottom: isDockOpen ? `${dockPaddingBottom + 16}px` : undefined }}>
       {/* 方案 B：全景统一控制台导航与切片栏 */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-3.5 flex flex-wrap items-center justify-between gap-3.5 shadow-sm">
-        {/* 左侧状态切片器：仅保留 [运行中] 与 [未启动] */}
+        {/* 左侧状态切片器：[运行中] [未启动] [本地镜像] */}
         <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 gap-1.5 text-xs font-medium">
           <button
             onClick={() => setStatusTab('RUNNING')}
@@ -224,30 +390,60 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
               {failedCount > 0 && <span className="ml-1 text-rose-400 text-[11px]">[{failedCount} 异常]</span>}
             </span>
           </button>
+
+          <button
+            onClick={() => setStatusTab('IMAGES')}
+            className={`px-4 py-2 rounded-lg flex items-center gap-2 transition cursor-pointer ${
+              statusTab === 'IMAGES'
+                ? 'bg-cyan-600/20 text-cyan-300 border border-cyan-500/40 shadow-sm font-semibold'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+            }`}
+          >
+            <HardDrive className="w-3.5 h-3.5 text-slate-400" />
+            <span>
+              本地镜像 ({images.length > 0 ? images.length : '镜像'})
+            </span>
+          </button>
         </div>
 
-        {/* 右侧搜索与全局停止按钮 */}
+        {/* 右侧搜索与全局停止/刷新按钮 */}
         <div className="flex items-center gap-3">
           <div className="relative">
             <Search className="w-3.5 h-3.5 absolute left-3 top-3 text-slate-500" />
             <input
               type="text"
-              placeholder={`在 ${statusTab === 'RUNNING' ? '运行中' : '未启动'} 中搜索...`}
+              placeholder={
+                statusTab === 'IMAGES'
+                  ? '搜索 Repo / Tag / ID...'
+                  : `在 ${statusTab === 'RUNNING' ? '运行中' : '未启动'} 中搜索...`
+              }
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="bg-slate-950 border border-slate-800 rounded-lg pl-8 pr-3 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 w-56 sm:w-64 font-mono transition"
             />
           </div>
 
-          <button
-            onClick={onStopAll}
-            disabled={runningModels.length === 0}
-            className="px-3.5 py-2 bg-rose-950/80 hover:bg-rose-900 disabled:opacity-40 disabled:hover:bg-rose-950/80 text-rose-300 border border-rose-800/60 rounded-lg text-xs transition flex items-center gap-1.5 font-medium cursor-pointer disabled:cursor-not-allowed shrink-0"
-            title="停止当前主机上所有运行中的大模型容器"
-          >
-            <Power className="w-3.5 h-3.5 text-rose-400" />
-            <span>停止所有容器</span>
-          </button>
+          {statusTab === 'IMAGES' ? (
+            <button
+              onClick={fetchHostImages}
+              disabled={loadingImages}
+              className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 rounded-lg text-xs transition flex items-center gap-1.5 font-medium cursor-pointer shrink-0"
+              title="重新扫描当前主机上的本地 Docker 镜像"
+            >
+              <RotateCw className={`w-3.5 h-3.5 ${loadingImages ? 'animate-spin' : ''}`} />
+              <span>刷新镜像</span>
+            </button>
+          ) : (
+            <button
+              onClick={onStopAll}
+              disabled={runningModels.length === 0}
+              className="px-3.5 py-2 bg-rose-950/80 hover:bg-rose-900 disabled:opacity-40 disabled:hover:bg-rose-950/80 text-rose-300 border border-rose-800/60 rounded-lg text-xs transition flex items-center gap-1.5 font-medium cursor-pointer disabled:cursor-not-allowed shrink-0"
+              title="停止当前主机上所有运行中的大模型容器"
+            >
+              <Power className="w-3.5 h-3.5 text-rose-400" />
+              <span>停止所有容器</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -585,6 +781,248 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 3. 本地镜像模式 (IMAGES - 按 Repo 归类展示) */}
+      {/* ========================================================================= */}
+      {statusTab === 'IMAGES' && (
+        <div className="space-y-4 font-sans">
+          {loadingImages && images.length === 0 ? (
+            <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-12 flex flex-col items-center justify-center text-center space-y-3">
+              <RotateCw className="w-6 h-6 text-cyan-400 animate-spin" />
+              <p className="text-xs font-mono text-slate-400">正在扫描当前算力主机的 Docker 镜像列表...</p>
+            </div>
+          ) : filteredRepoGroups.length === 0 ? (
+            <div className="bg-slate-900/40 border border-slate-800/80 border-dashed rounded-2xl p-12 flex flex-col items-center justify-center text-center space-y-3">
+              <div className="w-12 h-12 rounded-2xl bg-slate-800/80 border border-slate-700 flex items-center justify-center text-slate-400">
+                <HardDrive className="w-6 h-6" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-slate-300">
+                  {searchQuery ? '没有找到匹配的镜像或版本' : '当前算力主机暂无 Docker 镜像'}
+                </p>
+                <p className="text-xs text-slate-500 mt-1">
+                  您可以点击右上角【刷新镜像】或在终端中拉取镜像
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {/* 镜像快捷筛选分类 Pills */}
+              <div className="flex flex-wrap items-center gap-1.5 bg-slate-900/60 p-2 rounded-xl border border-slate-800/80 text-xs">
+                <button
+                  onClick={() => setImageFilter('ALL')}
+                  className={`px-3 py-1 rounded-lg transition font-mono cursor-pointer ${
+                    imageFilter === 'ALL'
+                      ? 'bg-slate-800 text-slate-100 border border-slate-600 font-semibold'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  全部镜像 ({images.length})
+                </button>
+                <button
+                  onClick={() => setImageFilter('VLLM')}
+                  className={`px-3 py-1 rounded-lg transition font-mono cursor-pointer ${
+                    imageFilter === 'VLLM'
+                      ? 'bg-blue-900/50 text-blue-200 border border-blue-600 font-semibold'
+                      : 'text-slate-400 hover:text-blue-300'
+                  }`}
+                >
+                  vLLM ({imageCounts.vllm})
+                </button>
+                <button
+                  onClick={() => setImageFilter('SGLANG')}
+                  className={`px-3 py-1 rounded-lg transition font-mono cursor-pointer ${
+                    imageFilter === 'SGLANG'
+                      ? 'bg-purple-900/50 text-purple-200 border border-purple-600 font-semibold'
+                      : 'text-slate-400 hover:text-purple-300'
+                  }`}
+                >
+                  SGLang ({imageCounts.sglang})
+                </button>
+                <button
+                  onClick={() => setImageFilter('IN_USE')}
+                  className={`px-3 py-1 rounded-lg transition font-mono cursor-pointer ${
+                    imageFilter === 'IN_USE'
+                      ? 'bg-emerald-900/50 text-emerald-200 border border-emerald-600 font-semibold'
+                      : 'text-slate-400 hover:text-emerald-300'
+                  }`}
+                >
+                  运行中使用 ({imageCounts.inUse})
+                </button>
+                <button
+                  onClick={() => setImageFilter('ALIAS')}
+                  className={`px-3 py-1 rounded-lg transition font-mono cursor-pointer ${
+                    imageFilter === 'ALIAS'
+                      ? 'bg-amber-900/50 text-amber-200 border border-amber-600 font-semibold'
+                      : 'text-slate-400 hover:text-amber-300'
+                  }`}
+                >
+                  存在重复别名 ({imageCounts.alias})
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between text-xs text-slate-400 font-mono px-1">
+                <span>
+                  共聚合 <strong className="text-slate-200">{filteredRepoGroups.length}</strong> 个镜像仓库，共 <strong className="text-cyan-300">{images.length}</strong> 个镜像版本
+                </span>
+                <span className="hidden sm:inline">已自动解析底层驱动、推理引擎与重复别名</span>
+              </div>
+
+              {filteredRepoGroups.map((group) => {
+                const isCollapsed = expandedRepos[group.repository] === false
+                const hasInUse = group.images.some((img) => img.is_in_use)
+
+                return (
+                  <div
+                    key={group.repository}
+                    className={`bg-slate-900/90 border rounded-xl overflow-hidden transition shadow-sm ${
+                      hasInUse ? 'border-slate-700 bg-slate-900' : 'border-slate-800/80 hover:border-slate-700/80'
+                    }`}
+                  >
+                    {/* Repo 头部栏 */}
+                    <div
+                      onClick={() => toggleExpandRepo(group.repository)}
+                      className="px-4 py-3 bg-slate-950/70 border-b border-slate-800/60 flex flex-wrap items-center justify-between gap-3 cursor-pointer select-none hover:bg-slate-950 transition"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                        <div className="w-7 h-7 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-cyan-400 shrink-0">
+                          <HardDrive className="w-4 h-4" />
+                        </div>
+                        <span className="font-bold text-sm text-slate-100 font-mono break-all">
+                          {group.repository}
+                        </span>
+                        <span className="text-[11px] px-2 py-0.5 rounded-full font-mono bg-slate-800 text-slate-300 border border-slate-700 shrink-0">
+                          {group.tagsCount} 个 Tag
+                        </span>
+                        {hasInUse && (
+                          <span className="text-[11px] px-2 py-0.5 rounded-full font-mono bg-emerald-950/80 text-emerald-300 border border-emerald-800/80 flex items-center gap-1 shrink-0">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                            <span>使用中</span>
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2 text-slate-400">
+                        {isCollapsed ? (
+                          <ChevronRight className="w-4 h-4 text-slate-500" />
+                        ) : (
+                          <ChevronDown className="w-4 h-4 text-slate-500" />
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Tag 列表 */}
+                    {!isCollapsed && (
+                      <div className="divide-y divide-slate-800/40">
+                        {group.images.map((img) => {
+                          const isCopied = copiedImageName === img.full_name
+                          const traits = parseImageTraits(img.full_name, images, img)
+
+                          return (
+                            <div
+                              key={img.image_id + '_' + img.tag + '_' + img.repository}
+                              className="px-4 py-3 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs hover:bg-slate-800/30 transition font-mono"
+                            >
+                              <div className="flex flex-col gap-1.5 min-w-0 flex-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  {/* 框架 Badge */}
+                                  {traits.framework && (
+                                    <span
+                                      className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                                        traits.framework === 'vLLM'
+                                          ? 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
+                                          : 'bg-purple-500/15 text-purple-400 border border-purple-500/30'
+                                      }`}
+                                    >
+                                      {traits.framework}
+                                    </span>
+                                  )}
+
+                                  {/* 算力驱动 Badge */}
+                                  {traits.driver && (
+                                    <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                                      {traits.driver}
+                                    </span>
+                                  )}
+
+                                  {/* 运行时 Badge */}
+                                  {traits.pythonTorch && (
+                                    <span className="px-2 py-0.5 rounded text-[11px] bg-slate-950 text-slate-300 border border-slate-800">
+                                      {traits.pythonTorch}
+                                    </span>
+                                  )}
+
+                                  {/* 模型专属 Patch */}
+                                  {traits.modelPatch && (
+                                    <span className="px-2 py-0.5 rounded text-[11px] bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                                      {traits.modelPatch}
+                                    </span>
+                                  )}
+
+                                  {/* 同 ID 别名标记 */}
+                                  {traits.aliasCount > 1 && (
+                                    <span
+                                      className="px-2 py-0.5 rounded text-[10px] bg-amber-950/60 text-amber-300 border border-amber-800/60 cursor-help"
+                                      title={`同 ID 存在 ${traits.aliasCount} 个镜像别名 (底层层存储完全共享):\n${traits.aliasRepos.join('\n')}`}
+                                    >
+                                      同ID别名 ×{traits.aliasCount}
+                                    </span>
+                                  )}
+
+                                  {/* 运行中状态 */}
+                                  {img.is_in_use && (
+                                    <span className="text-[11px] px-2 py-0.5 rounded bg-emerald-950/90 text-emerald-300 border border-emerald-700/80 flex items-center gap-1 font-sans">
+                                      <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                                      <span>
+                                        运行中: {img.used_by && img.used_by.length > 0 ? img.used_by.join(', ') : '已挂载'}
+                                      </span>
+                                    </span>
+                                  )}
+                                </div>
+
+                                <div className="flex flex-wrap items-center gap-3 text-slate-400 text-[11px]">
+                                  <span className="text-slate-200 font-semibold flex items-center gap-1">
+                                    <Tag className="w-3 h-3 text-indigo-400" />
+                                    <span>Tag: {img.tag || '<none>'}</span>
+                                  </span>
+                                  <span>ID: <strong className="text-slate-300">{img.image_id.substring(0, 12)}</strong></span>
+                                  <span>大小: <strong className="text-slate-200">{img.size}</strong></span>
+                                  <span>创建: {img.created ? img.created.substring(0, 19) : '-'}</span>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-2 shrink-0">
+                                <button
+                                  onClick={() => handleCopyImage(img.full_name)}
+                                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded border border-slate-700 flex items-center gap-1.5 transition cursor-pointer text-xs font-sans"
+                                  title="复制完整镜像名 (repo:tag)"
+                                >
+                                  {isCopied ? (
+                                    <>
+                                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                      <span className="text-emerald-400 font-medium">已复制</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Copy className="w-3.5 h-3.5 text-slate-400" />
+                                      <span>复制镜像名</span>
+                                    </>
+                                  )}
+                                </button>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           )}
         </div>

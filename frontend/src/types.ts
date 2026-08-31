@@ -126,3 +126,20 @@ export interface RsyncTask {
   status: string
 }
 
+export interface DockerImageItem {
+  repository: string
+  tag: string
+  image_id: string
+  created: string
+  size: string
+  full_name: string
+  is_in_use?: boolean
+  used_by?: string[]
+}
+
+export interface RepoImageGroup {
+  repository: string
+  tags_count: number
+  images: DockerImageItem[]
+}
+

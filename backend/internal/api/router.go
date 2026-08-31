@@ -1,12 +1,14 @@
 package api
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/gin-contrib/cors"
@@ -72,14 +74,16 @@ func SetupRouter() *gin.Engine {
 		v1.POST("/models/script", saveModelScript)
 		v1.GET("/models/command", getModelCommand)
 		v1.GET("/models/logs", getModelLogs)
+		v1.GET("/models/images", getHostImages)
 
 		// 性能压测与通信
 		v1.GET("/benchmark/logs", getBenchmarkLogs)
 		v1.POST("/benchmark/stream", streamBenchmark)
 		v1.GET("/mccl/stream", streamMCCL)
 
-		// 模型试玩 (直接 HTTP 代理到当前主机)
+		// 模型试玩 (直接 HTTP 代理到当前主机，支持常规与 SSE 流式打字机)
 		v1.POST("/chat", chatCompletions)
+		v1.POST("/chat/stream", chatCompletionsStream)
 
 		// 模型资产检索与 ModelScope 下载与分发中心
 		v1.GET("/hub/local", getHubLocalAssets)
@@ -359,6 +363,7 @@ func streamMCCL(c *gin.Context) {
 }
 
 type ChatReq struct {
+	Model       string  `json:"model"`
 	Prompt      string  `json:"prompt" binding:"required"`
 	MaxTokens   int     `json:"max_tokens"`
 	Temperature float64 `json:"temperature"`
@@ -372,10 +377,7 @@ func chatCompletions(c *gin.Context) {
 		return
 	}
 	if req.MaxTokens <= 0 {
-		req.MaxTokens = 256
-	}
-	if req.Port <= 0 {
-		req.Port = 8000
+		req.MaxTokens = 4096
 	}
 
 	h, err := host.GetHostManager().GetCurrentHost()
@@ -384,11 +386,40 @@ func chatCompletions(c *gin.Context) {
 		return
 	}
 
+	if req.Port <= 0 {
+		req.Port = h.APIPort
+		if req.Port <= 0 {
+			req.Port = 8000
+		}
+	}
+
+	client := &http.Client{Timeout: 300 * time.Second}
+	modelName := strings.TrimSpace(req.Model)
+
+	// 动态检测目标端口实际提供服务的模型名称
+	if modelName == "" {
+		modelsUrl := fmt.Sprintf("http://%s:%d/v1/models", h.SSHAlias, req.Port)
+		if mResp, mErr := client.Get(modelsUrl); mErr == nil {
+			defer mResp.Body.Close()
+			var mData struct {
+				Data []struct {
+					ID string `json:"id"`
+				} `json:"data"`
+			}
+			if json.NewDecoder(mResp.Body).Decode(&mData) == nil && len(mData.Data) > 0 {
+				modelName = mData.Data[0].ID
+			}
+		}
+	}
+	if modelName == "" {
+		modelName = "default"
+	}
+
 	t0 := time.Now()
 	url := fmt.Sprintf("http://%s:%d/v1/chat/completions", h.SSHAlias, req.Port)
 
 	payload := map[string]interface{}{
-		"model": "qwen3.8-27b",
+		"model": modelName,
 		"messages": []map[string]string{
 			{"role": "user", "content": req.Prompt},
 		},
@@ -397,7 +428,6 @@ func chatCompletions(c *gin.Context) {
 	}
 	bodyBytes, _ := json.Marshal(payload)
 
-	client := &http.Client{Timeout: 60 * time.Second}
 	resp, err := client.Post(url, "application/json", bytes.NewReader(bodyBytes))
 	cost := time.Since(t0).Seconds()
 
@@ -419,6 +449,7 @@ func chatCompletions(c *gin.Context) {
 		choice0 := choices[0].(map[string]interface{})
 		msg := choice0["message"].(map[string]interface{})
 		reply := msg["content"].(string)
+		finishReason, _ := choice0["finish_reason"].(string)
 
 		usage, _ := data["usage"].(map[string]interface{})
 		pTok, _ := usage["prompt_tokens"].(float64)
@@ -432,6 +463,9 @@ func chatCompletions(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"ok":                true,
 			"reply":             reply,
+			"finish_reason":     finishReason,
+			"target_port":       req.Port,
+			"target_model":      modelName,
 			"cost":              float64(int(cost*100)) / 100.0,
 			"speed":             speed,
 			"prompt_tokens":     int(pTok),
@@ -441,6 +475,110 @@ func chatCompletions(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"ok": false, "error": string(respBytes)})
+}
+
+func chatCompletionsStream(c *gin.Context) {
+	var req ChatReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if req.MaxTokens <= 0 {
+		req.MaxTokens = 4096
+	}
+
+	h, err := host.GetHostManager().GetCurrentHost()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if req.Port <= 0 {
+		req.Port = h.APIPort
+		if req.Port <= 0 {
+			req.Port = 8000
+		}
+	}
+
+	modelName := strings.TrimSpace(req.Model)
+	if modelName == "" {
+		modelsUrl := fmt.Sprintf("http://%s:%d/v1/models", h.SSHAlias, req.Port)
+		clientCheck := &http.Client{Timeout: 5 * time.Second}
+		if mResp, mErr := clientCheck.Get(modelsUrl); mErr == nil {
+			defer mResp.Body.Close()
+			var mData struct {
+				Data []struct {
+					ID string `json:"id"`
+				} `json:"data"`
+			}
+			if json.NewDecoder(mResp.Body).Decode(&mData) == nil && len(mData.Data) > 0 {
+				modelName = mData.Data[0].ID
+			}
+		}
+	}
+	if modelName == "" {
+		modelName = "default"
+	}
+
+	url := fmt.Sprintf("http://%s:%d/v1/chat/completions", h.SSHAlias, req.Port)
+
+	payload := map[string]interface{}{
+		"model": modelName,
+		"messages": []map[string]string{
+			{"role": "user", "content": req.Prompt},
+		},
+		"max_tokens":  req.MaxTokens,
+		"temperature": req.Temperature,
+		"stream":      true,
+	}
+	bodyBytes, _ := json.Marshal(payload)
+
+	httpReq, err := http.NewRequestWithContext(c.Request.Context(), "POST", url, bytes.NewReader(bodyBytes))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	// 流式请求不设总体 Timeout，由用户连接生命周期自动管理
+	client := &http.Client{}
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"ok": false, "error": fmt.Sprintf("连接后端异常: %v", err)})
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		errBytes, _ := io.ReadAll(resp.Body)
+		c.JSON(resp.StatusCode, gin.H{"ok": false, "error": string(errBytes)})
+		return
+	}
+
+	// 设置 SSE 头
+	c.Writer.Header().Set("Content-Type", "text/event-stream")
+	c.Writer.Header().Set("Cache-Control", "no-cache")
+	c.Writer.Header().Set("Connection", "keep-alive")
+	c.Writer.Header().Set("X-Accel-Buffering", "no")
+	c.Writer.Flush()
+
+	scanner := bufio.NewScanner(resp.Body)
+	buf := make([]byte, 64*1024)
+	scanner.Buffer(buf, 1024*1024)
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "" {
+			continue
+		}
+		// 透传 SSE 协议
+		fmt.Fprintf(c.Writer, "%s\n\n", line)
+		c.Writer.Flush()
+
+		if strings.TrimSpace(line) == "data: [DONE]" {
+			break
+		}
+	}
 }
 
 
@@ -460,6 +598,15 @@ func saveModelScript(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("脚本 %s 保存成功", req.Name)})
+}
+
+func getHostImages(c *gin.Context) {
+	images, err := model.GetModelManager().GetHostImages()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"images": images})
 }
 
 

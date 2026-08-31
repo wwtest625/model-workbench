@@ -376,7 +376,7 @@ export default function App() {
         )}
 
         {currentTab === 'playground' && (
-          <Playground currentHostName={currentHost?.name} apiPort={currentHost?.api_port || 8000} />
+          <Playground currentHostName={currentHost?.name} apiPort={currentHost?.api_port || 8000} models={models} />
         )}
 
         {currentTab === 'logs' && <LogArchive logs={logFiles} onRefresh={fetchLogs} />}

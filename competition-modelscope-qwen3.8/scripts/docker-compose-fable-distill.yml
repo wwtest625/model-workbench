@@ -1,0 +1,46 @@
+services:
+  vllm-fable-distill:
+    image: cr.metax-tech.com/public-ai-release/maca/modelzoo.llm.vllm:1.0.3-maca.ai3.7.0.107-torch2.8-py310-ubuntu22.04-amd64
+    container_name: vllm_qwen3_8_27b_fable_distill
+    working_dir: /workspace
+    privileged: true
+    network_mode: "host"
+    shm_size: "100gb"
+    stdin_open: true
+    tty: true
+    command: >
+      bash -c "
+        ulimit -n 65536 &&
+        bash /workspace/start_vllm_qwen3_8_27b_fable_distill.sh
+      "
+    environment:
+      - PATH=/opt/maca/bin:/opt/maca/mxgpu_llvm/bin:/opt/maca/ompi/bin:/opt/maca/ucx/bin:/opt/mxdriver/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+      - LD_LIBRARY_PATH=/opt/maca/mxshmem/lib:/opt/maca/lib:/opt/maca/ompi/lib:/opt/maca/ucx/lib:/opt/mxdriver/lib
+      - MACA_PATH=/opt/maca
+      - MACA_CLANG_PATH=/opt/maca/mxgpu_llvm/bin
+      - CUCC_PATH=/opt/maca/tools/cu-bridge
+      - CUDA_PATH=/opt/maca/tools/cu-bridge
+      - TZ=Asia/Shanghai
+      - TORCH_ALLOW_TF32_CUBLAS_OVERRIDE=1
+      - DEBIAN_FRONTEND=noninteractive
+    volumes:
+      - /home/workspace:/workspace
+      - /mnt/model:/data/model
+      - /home/models_log/vllm:/home/models_log/vllm
+    devices:
+      - /dev/dri:/dev/dri
+      - /dev/mxcd:/dev/mxcd
+      - /dev/infiniband:/dev/infiniband
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+      memlock:
+        soft: -1
+        hard: -1
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"

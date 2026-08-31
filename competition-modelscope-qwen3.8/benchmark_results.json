@@ -1,0 +1,86 @@
+[
+  {
+    "index": 1,
+    "category": "数学与逻辑推导 (Math)",
+    "prompt": "请只给出最终计算结果：17 * 23 + 19 = ?",
+    "base": {
+      "success": true,
+      "elapsed_s": 0.214,
+      "prompt_tokens": 31,
+      "completion_tokens": 4,
+      "tok_per_sec": 18.7,
+      "content": "410"
+    },
+    "distill": {
+      "success": true,
+      "elapsed_s": 1.978,
+      "prompt_tokens": 71,
+      "completion_tokens": 75,
+      "tok_per_sec": 37.92,
+      "content": "We need answer user's request in Chinese: \"请只给出最终计算结果：17 * 23 + 19 = ?\" Means only give final calculation result. Compute 17*23=391, +19=410. Final only 410. Ensure no extra.\n</think>\n\n410"
+    }
+  },
+  {
+    "index": 2,
+    "category": "算法编码与时空复杂度 (Code)",
+    "prompt": "用 Python 编写一个高效求区间 [L, R] 内所有质数的函数，并简要说明时间复杂度。",
+    "base": {
+      "success": true,
+      "elapsed_s": 12.606,
+      "prompt_tokens": 38,
+      "completion_tokens": 512,
+      "tok_per_sec": 40.62,
+      "content": "```python\ndef primes_in_range(L: int, R: int) -> list[int]:\n    \"\"\"\n    返回区间 [L, R] 内所有质数的列表。\n    使用埃拉托斯特尼筛法（Sieve of Eratosthenes）优化版本。\n    \"\"\"\n    if R < 2:\n        return []\n    \n    # 确保 L 至少为 2\n    L = max(L, 2)\n    \n    # 创建布尔数组，索引 0 到 R，初始全为 True\n    is_prime = [True] * (R + 1)\n    is_prime[0] = False\n    is_prime[1] = False\n    \n    # 埃拉托斯特尼筛法\n    import math\n    limit = int(math.isqrt(R))\n    for i in range(2, limit + 1):\n        if is_prime[i]:\n            # 从 i*i 开始标记合数\n            for j in range(i * i, R + 1, i):\n                is_prime[j] = False\n    \n    # 收集 [L, R] 范围内的质数\n    return [x for x in range(L, R + 1) if is_prime[x]]\n```\n\n**时间复杂度说明：**\n\n- **筛法部分**：埃拉托斯特尼筛法的时间复杂度为 **O(R log log R)**，其中 R 是区间右端点。这是因为对每个质数 p，我们标记其倍数，总操作次数约为 R/2 + R/3 + R/5 + ... ≈ R log log R。\n- **收集结果部分**：遍历 [L, R] 范围内的每个数，时间复杂度为 **O(R - L + 1)**。\n- **总体时间复杂度**：**O(R log log R + (R - L + 1))**，通常简化为 **O(R log log R)**（当 R 较大时主导项）。\n- **空间复杂度**：**O(R)**，用于存储布尔数组 `is_prime`。\n\n> **注意**：如果区间 [L, R] 很大但 L 和 R 的差值较小，可以考虑使用**分段筛法（Segmented Sieve）**，其空间复杂度可降至 O(√R + (R - L + 1))，时间复杂度仍为 O(R log log R)。"
+    },
+    "distill": {
+      "success": true,
+      "elapsed_s": 12.856,
+      "prompt_tokens": 78,
+      "completion_tokens": 512,
+      "tok_per_sec": 39.83,
+      "content": "用户要求用 Python 编写一个高效求区间 [L, R] 内所有质数的函数，并简要说明时间复杂度。需要用中文回答。需要给出代码，可能使用分段筛（Segmented Sieve）适合大区间，避免完整筛到 R 的内存问题。需要说明时间复杂度 O((R-L+1) log log R + sqrt(R) log log sqrt(R)) 或近似 O(n log log R)，空间 O(sqrt(R)+n)。也可提供简单埃拉托斯特尼筛如果 R 不大。用户要“高效”，最好给分段筛。注意边界 L<2。实现细节：\n\ndef primes_in_range(L, R):\n    if R < 2: return []\n    L = max(2, L)\n    limit = int(R**0.5) + 1\n    small_primes = sieve(limit)\n    is_prime = bytearray(b'\\x01') * (R-L+1)\n    for p in small_primes:\n        start = max(p*p, ((L + p - 1)//p)*p)\n        for multiple in range(start, R+1, p):\n            is_prime[multiple-L] = 0\n    return [L+i for i, v in enumerate(is_prime) if v]\n\nsieve(limit):\n    if limit < 2: return []\n    is_prime = bytearray(b'\\x01')*(limit+1)\n    is_prime[0:2] = b'\\x00\\x00'\n    for i in range(2, int(limit**0.5)+1):\n        if is_prime[i]:\n            is_prime[i*i:limit+1:i] = b'\\x00' * (((limit - i*i)//i)+1)\n    return [i for i in range(2, limit+1) if is_prime[i]]\n\n需要小心 bytearray slice assignment length。对于 small sieve, is_prime[i*i:limit+1:i] = b'\\x00' * count works. For segmented, loop assignment okay. Could optimize using slice assignment too:\ncount = ((R - start)//p) + 1\nis_prime[start-L:R+1-L:p] = b'\\x00' * count\nBut bytearray extended slice assignment requires same length; count correct. Use this for efficiency.\n\nPotential issue: if start > R, count negative"
+    }
+  },
+  {
+    "index": 3,
+    "category": "复杂逻辑推理 (Logic)",
+    "prompt": "一个水池有两个进水管和一个出水管。单开甲管6小时注满，单开乙管8小时注满，单开出水管12小时放空。若三管齐开，几小时可注满？请写出简明计算步骤并给出答案。",
+    "base": {
+      "success": true,
+      "elapsed_s": 8.201,
+      "prompt_tokens": 68,
+      "completion_tokens": 330,
+      "tok_per_sec": 40.24,
+      "content": "设水池容量为 1。\n\n1.  **计算各管的工作效率：**\n    *   甲管进水效率：$\\frac{1}{6}$\n    *   乙管进水效率：$\\frac{1}{8}$\n    *   出水管排水效率：$\\frac{1}{12}$\n\n2.  **计算三管齐开时的净进水效率：**\n    $$ \\text{净效率} = \\frac{1}{6} + \\frac{1}{8} - \\frac{1}{12} $$\n\n    通分（最小公倍数为 24）：\n    $$ \\frac{1}{6} = \\frac{4}{24}, \\quad \\frac{1}{8} = \\frac{3}{24}, \\quad \\frac{1}{12} = \\frac{2}{24} $$\n\n    $$ \\text{净效率} = \\frac{4}{24} + \\frac{3}{24} - \\frac{2}{24} = \\frac{5}{24} $$\n\n3.  **计算注满所需时间：**\n    $$ \\text{时间} = \\frac{\\text{总工作量}}{\\text{净效率}} = \\frac{1}{\\frac{5}{24}} = \\frac{24}{5} = 4.8 \\text{ 小时} $$\n\n**答案：** 4.8 小时（或 4 小时 48 分钟）。"
+    },
+    "distill": {
+      "success": true,
+      "elapsed_s": 7.301,
+      "prompt_tokens": 108,
+      "completion_tokens": 291,
+      "tok_per_sec": 39.86,
+      "content": "We need answer in Chinese. Need solve simple rates. Need final concise steps. Let's compute:甲 1/6, 乙 1/8, 出 -1/12. Sum = common denom 24: 4+3-2=5/24 per hour. Time = 24/5 = 4.8 hours = 4小时48分. Need maybe if empty initially. Answer.\n</think>\n\n设水池容量为 1。\n\n- 甲管注水速度：\\( \\frac{1}{6} \\)\n- 乙管注水速度：\\( \\frac{1}{8} \\)\n- 出水管放水速度：\\( \\frac{1}{12} \\)\n\n三管齐开时，每小时净注水：\n\n\\[\n\\frac{1}{6}+\\frac{1}{8}-\\frac{1}{12}\n= \\frac{4}{24}+\\frac{3}{24}-\\frac{2}{24}\n= \\frac{5}{24}\n\\]\n\n注满所需时间：\n\n\\[\n1 \\div \\frac{5}{24}=\\frac{24}{5}=4.8 \\text{小时}\n\\]\n\n**答案：4.8小时，即4小时48分钟。**"
+    }
+  },
+  {
+    "index": 4,
+    "category": "国产集群运维排障 (Ops/Reasoning)",
+    "prompt": "在沐曦 MetaX GPU 集群上使用 vLLM 部署 27B 模型，出现多卡通信超时并触发 NCCL Watchdog 崩溃，给出 2 个核心排查环境变量并详细解释其底层原理。",
+    "base": {
+      "success": true,
+      "elapsed_s": 12.646,
+      "prompt_tokens": 62,
+      "completion_tokens": 512,
+      "tok_per_sec": 40.49,
+      "content": "在沐曦（MetaX）GPU 集群上使用 vLLM 部署大模型时，遇到 NCCL Watchdog 超时崩溃，通常是因为**多卡间通信（AllReduce/AllGather）阻塞**或**初始化失败**导致的。NCCL Watchdog 机制会在检测到通信操作长时间无响应时强制终止进程，以防止集群资源死锁。\n\n以下是两个最核心、最常用于排查此类问题的环境变量及其底层原理详解：\n\n---\n\n### 1. `NCCL_DEBUG=INFO`（或 `NCCL_DEBUG=WARN`）\n\n#### **作用**\n启用 NCCL 的详细日志输出，是排查通信问题的**第一优先级**手段。\n\n#### **底层原理与排查逻辑**\n- **原理**：\n  NCCL（NVIDIA Collective Communications Library，在沐曦 GPU 上通常由厂商提供的兼容层或替代库如 `MXCL` 或 `HCCL` 模拟实现）在初始化阶段会执行复杂的拓扑发现（Topology Discovery）和通信通道建立（Channel Setup）。\n  - 当设置 `NCCL_DEBUG=INFO` 时，NCCL 会打印出：\n    - 每个 GPU 的 PCI 拓扑结构（是否通过 NVLink、PCIe 或网络互联）。\n    - 每个通信组（Communicator）的初始化状态。\n    - 每个集合通信操作（如 `all_reduce`）的启动和完成时间戳。\n    - 底层传输协议的选择（如 P2P、SHM、NET）。\n  - 在沐曦 GPU 上，由于硬件架构与 NVIDIA 不同，NCCL 兼容层可能需要特定的拓扑映射。如果日志中出现 `NCCL WARN` 或 `NCCL INFO` 中显示某些 GPU 对之间无法建立 P2P 连接，或拓扑发现失败，即可定位是硬件互联问题还是驱动/库版本不匹配。\n\n- **排查重点**：\n  - 查看日志中是否有 `NCCL WARN` 或 `NCCL ERROR`。\n  - 检查 `NCCL INFO` 中是否所有 GPU 都成功加入了通信组。\n  - 观察超时发生前，最后一个成功的通信操作是什么，以及哪个 GPU 对之间通信中断。\n\n---\n\n### 2. `NCCL_TIMEOUT=1800`（单位：秒）\n\n#### **作用**\n延长 NCCL Watchdog 的超时阈值"
+    },
+    "distill": {
+      "success": true,
+      "elapsed_s": 12.772,
+      "prompt_tokens": 102,
+      "completion_tokens": 512,
+      "tok_per_sec": 40.09,
+      "content": "用户用中文提问：在沐曦 MetaX GPU 集群上使用 vLLM 部署 27B 模型，出现多卡通信超时并触发 NCCL Watchdog 崩溃，给出 2 个核心排查环境变量并详细解释其底层原理。\n\n需要回答两个核心排查环境变量，并详细解释底层原理。场景：MetaX GPU 集群，vLLM，27B 模型，多卡通信超时，NCCL Watchdog 崩溃。可能涉及 NCCL 超时、集合通信 hang、GPU 间通信链路、拓扑、P2P、NVLink/PCIe/IB/RoCE、NCCL_DEBUG、NCCL_TIMEOUT? 但 NCCL 本身没有 NCCL_TIMEOUT 环境变量？PyTorch 有 TORCH_NCCL_BLOCKING_WAIT, TORCH_NCCL_ASYNC_ERROR_HANDLING, NCCL_DEBUG, NCCL_DEBUG_SUBSYS, NCCL_SOCKET_IFNAME, NCCL_IB_DISABLE, NCCL_P2P_DISABLE, NCCL_SHM_DISABLE, NCCL_COLLNET_ENABLE, NCCL_BUFFSIZE, NCCL_MIN_NCHANNELS, NCCL_MAX_NCHANNELS, NCCL_ASYNC_ERROR_HANDLING, TORCH_NCCL_TRACE_BUFFER_SIZE, TORCH_NCCL_DUMP_ON_TIMEOUT, TORCH_NCCL_DESYNC_DEBUG, NCCL_DEBUG_FILE, NCCL_IB_HCA, NCCL_IB_GID_INDEX, NCCL_IB_TC, NCCL_IB_SL, NCCL_IB_TIMEOUT, NCCL_IB_RETRY_CNT, NCCL_NET_GDR_LEVEL, NCCL_P2P_LEVEL, NCCL_SOCKET_NTHREADS, NCCL_NSOCKS_PERTHREAD, NCCL_TUNER_PLUGIN, NCCL_TOPO_FILE, NCCL_GRAPH_FILE, NCCL_CROSS_NIC, NCCL_IB_QPS_PER_CONNECTION, NCCL_IB_ADAPTIVE_ROUTING, NCCL_IB_AR_THRESHOLD, NCCL_IB_PCI_RELAXED_ORDERING, NCCL_IB_SPLIT_DATA_ON_QPS, NCCL_IB_PCI_RELAXED_ORDERING, NCCL_IB_PCI_RELAXED_ORDERING, NCCL_IB_PCI_RELAXED_ORDERING.\n\n问题要求“给出 2 个核心排查环境变量并详细解释其底层原理”。可能最核心是 NCCL_DEBUG=INFO 和 NCCL_DEBUG_SUBSYS=ALL? 但“排查环境变量”可能指用于定位通信超时的变量：NCCL_DEBUG=INFO 和 NCCL_DEBUG_SUBSYS=INIT,NET,GRAPH,COLL? 或者 NCCL_DEBUG"
+    }
+  }
+]
