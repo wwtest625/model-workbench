@@ -523,11 +523,20 @@ echo $!
 }
 
 func (h *HubManager) GetRsyncTasks() ([]RsyncTask, error) {
-	sh := `
-python3 -c '
+	storageServers := []string{"192.2.56.76", "192.2.29.9"}
+	var allTasks []RsyncTask
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+
+	for _, srv := range storageServers {
+		wg.Add(1)
+		go func(serverIP string) {
+			defer wg.Done()
+			sh := fmt.Sprintf(`python3 -c '
 import os, json, subprocess, re
 
 tasks = []
+server_ip = "%s"
 try:
     ps_out = subprocess.check_output(["ps", "-eo", "pid,args"], text=True)
     for line in ps_out.strip().split("\n"):
@@ -598,7 +607,7 @@ try:
                                 total_shards = int(m_name.group(2))
                             
                             # 2. 匹配当前切片的传输百分比与速率、ETA
-                            m_pct = re.search(r"(\d+)%\s+([\d\.]+[KMG]?B/s)\s+([\d:]+)", l)
+                            m_pct = re.search(r"(\d+)%%\s+([\d\.]+[KMG]?B/s)\s+([\d:]+)", l)
                             if m_pct:
                                 file_pct = int(m_pct.group(1))
                                 speed = m_pct.group(2)
@@ -621,7 +630,7 @@ try:
             tasks.append({
                 "pid": pid,
                 "model_name": model_name,
-                "source_server": "192.2.56.76",
+                "source_server": server_ip,
                 "source_path": src_path,
                 "target_server": target_server,
                 "target_path": target_path,
@@ -637,18 +646,25 @@ except Exception as e:
     pass
 
 print(json.dumps(tasks, ensure_ascii=False))
-'
-`
-	res, err := runner.RunCmd("192.2.56.76", sh, 10)
-	if err != nil || !res.OK {
-		return []RsyncTask{}, nil
+'`, serverIP)
+
+			res, err := runner.RunCmd(serverIP, sh, 6)
+			if err == nil && res.OK {
+				var subTasks []RsyncTask
+				if json.Unmarshal([]byte(strings.TrimSpace(res.Stdout)), &subTasks) == nil && len(subTasks) > 0 {
+					mu.Lock()
+					allTasks = append(allTasks, subTasks...)
+					mu.Unlock()
+				}
+			}
+		}(srv)
 	}
 
-	var tasks []RsyncTask
-	if err := json.Unmarshal([]byte(res.Stdout), &tasks); err != nil {
-		return []RsyncTask{}, nil
+	wg.Wait()
+	if allTasks == nil {
+		allTasks = []RsyncTask{}
 	}
-	return tasks, nil
+	return allTasks, nil
 }
 
 func (h *HubManager) GetRsyncLog(modelName string, lines int) (string, error) {
@@ -658,12 +674,15 @@ func (h *HubManager) GetRsyncLog(modelName string, lines int) (string, error) {
 	if modelName == "" {
 		return "", fmt.Errorf("modelName 不能为空")
 	}
+	storageServers := []string{"192.2.56.76", "192.2.29.9"}
 	sh := fmt.Sprintf("tail -n %d /tmp/rsync_%s.log 2>/dev/null", lines, modelName)
-	res, err := runner.RunCmd("192.2.56.76", sh, 10)
-	if err != nil {
-		return "", err
+	for _, server := range storageServers {
+		res, err := runner.RunCmd(server, sh, 5)
+		if err == nil && res.OK && strings.TrimSpace(res.Stdout) != "" {
+			return res.Stdout, nil
+		}
 	}
-	return res.Stdout, nil
+	return "", nil
 }
 
 
