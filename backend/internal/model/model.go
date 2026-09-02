@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"metax-workbench/internal/config"
 	"metax-workbench/internal/host"
 	"metax-workbench/internal/runner"
 )
@@ -63,20 +64,7 @@ func (m *ModelManager) DiscoverModels() ([]ModelCard, string, error) {
 		workspace = "/home/workspace"
 	}
 
-	portMap := make(map[string]int)
-	for _, p := range h.Models {
-		if p.Port > 0 {
-			if p.ContainerName != "" {
-				portMap[strings.ToLower(p.ContainerName)] = p.Port
-			}
-			if p.ServiceName != "" {
-				portMap[strings.ToLower(p.ServiceName)] = p.Port
-			}
-			if p.Name != "" {
-				portMap[strings.ToLower(p.Name)] = p.Port
-			}
-		}
-	}
+	portMap := buildPortMap(h.Models)
 	portMapBytes, _ := json.Marshal(portMap)
 	portMapJSON := string(portMapBytes)
 
@@ -295,8 +283,8 @@ print(json.dumps(result, ensure_ascii=False))
 		pingMs := int64(0)
 		uptime := ""
 		img := preset.Image
-		cNameLower := strings.Trim(strings.ToLower(preset.ContainerName), "\r\n\t\\ ")
-		sNameLower := strings.Trim(strings.ToLower(preset.ServiceName), "\r\n\t\\ ")
+		cNameLower := normalizePresetName(preset.ContainerName)
+		sNameLower := normalizePresetName(preset.ServiceName)
 
 		var matchedProbe *smartProbeItem
 		if p, ok := probeMap[cNameLower]; ok {
@@ -367,19 +355,7 @@ print(json.dumps(result, ensure_ascii=False))
 			continue
 		}
 
-			imgLower := strings.ToLower(cImg)
-			isLLM := strings.Contains(cNameLower, "vllm") || strings.Contains(cNameLower, "sglang") ||
-				strings.Contains(cNameLower, "lmdeploy") || strings.Contains(cNameLower, "tgi") ||
-				strings.Contains(cNameLower, "ollama") || strings.Contains(cNameLower, "model") ||
-				strings.Contains(cNameLower, "llm") || strings.Contains(cNameLower, "glm") ||
-				strings.Contains(cNameLower, "deepseek") || strings.Contains(cNameLower, "qwen") ||
-				strings.Contains(cNameLower, "llama") || strings.Contains(cNameLower, "baichuan") ||
-				strings.Contains(cNameLower, "intern") || strings.Contains(cNameLower, "mistral") ||
-				strings.Contains(imgLower, "vllm") || strings.Contains(imgLower, "sglang") ||
-				strings.Contains(imgLower, "model") || strings.Contains(imgLower, "maca") ||
-				strings.Contains(imgLower, "dcu") || strings.Contains(imgLower, "torch")
-
-			if isLLM {
+			if isLLMContainer(cName, cImg) {
 				status := "STOPPED"
 				statusDetail := ""
 				pingMs := int64(0)
@@ -410,21 +386,12 @@ print(json.dumps(result, ensure_ascii=False))
 					if p.Script != "" {
 						script = p.Script
 					}
-				} else if strings.Contains(cNameLower, "sglang") || strings.Contains(imgLower, "sglang") {
-					engine = "SGLang"
+				} else {
+					engine = inferEngineFromNames(cName, cImg)
 				}
 
 				if script == "" {
-					for _, s := range availableScripts {
-						sClean := strings.ToLower(s)
-						if strings.Contains(sClean, cNameLower) || strings.Contains(cNameLower, strings.TrimSuffix(strings.TrimPrefix(sClean, "start_"), ".sh")) {
-							script = s
-							break
-						}
-					}
-					if script == "" {
-						script = fmt.Sprintf("start_%s.sh", strings.ToLower(cName))
-					}
+					script = matchScriptForContainer(cNameLower, availableScripts)
 				}
 
 				result = append(result, ModelCard{
@@ -447,6 +414,68 @@ print(json.dumps(result, ensure_ascii=False))
 
 
 	return result, runningCmd, nil
+}
+
+// ---------- 纯逻辑辅助函数（便于单元测试） ----------
+
+// normalizePresetName 规范化预设的容器/服务名：小写化并清洗 CRLF 与空白字符
+func normalizePresetName(s string) string {
+	return strings.Trim(strings.ToLower(s), "\r\n\t\\ ")
+}
+
+// buildPortMap 根据主机模型预设构建 名称->端口 映射（容器名/服务名/显示名均注册，统一小写）
+func buildPortMap(models []config.ModelPreset) map[string]int {
+	portMap := make(map[string]int)
+	for _, p := range models {
+		if p.Port > 0 {
+			if p.ContainerName != "" {
+				portMap[strings.ToLower(p.ContainerName)] = p.Port
+			}
+			if p.ServiceName != "" {
+				portMap[strings.ToLower(p.ServiceName)] = p.Port
+			}
+			if p.Name != "" {
+				portMap[strings.ToLower(p.Name)] = p.Port
+			}
+		}
+	}
+	return portMap
+}
+
+// isLLMContainer 判断容器名/镜像名是否属于大模型推理相关容器
+func isLLMContainer(containerName, imageName string) bool {
+	cNameLower := strings.ToLower(containerName)
+	imgLower := strings.ToLower(imageName)
+	return strings.Contains(cNameLower, "vllm") || strings.Contains(cNameLower, "sglang") ||
+		strings.Contains(cNameLower, "lmdeploy") || strings.Contains(cNameLower, "tgi") ||
+		strings.Contains(cNameLower, "ollama") || strings.Contains(cNameLower, "model") ||
+		strings.Contains(cNameLower, "llm") || strings.Contains(cNameLower, "glm") ||
+		strings.Contains(cNameLower, "deepseek") || strings.Contains(cNameLower, "qwen") ||
+		strings.Contains(cNameLower, "llama") || strings.Contains(cNameLower, "baichuan") ||
+		strings.Contains(cNameLower, "intern") || strings.Contains(cNameLower, "mistral") ||
+		strings.Contains(imgLower, "vllm") || strings.Contains(imgLower, "sglang") ||
+		strings.Contains(imgLower, "model") || strings.Contains(imgLower, "maca") ||
+		strings.Contains(imgLower, "dcu") || strings.Contains(imgLower, "torch")
+}
+
+// inferEngineFromNames 根据容器名/镜像名推断推理引擎（默认 vLLM，含 sglang 则为 SGLang）
+func inferEngineFromNames(containerName, imageName string) string {
+	if strings.Contains(strings.ToLower(containerName), "sglang") ||
+		strings.Contains(strings.ToLower(imageName), "sglang") {
+		return "SGLang"
+	}
+	return "vLLM"
+}
+
+// matchScriptForContainer 为容器在工作空间脚本列表中匹配启动脚本，未命中时按约定生成默认名
+func matchScriptForContainer(cNameLower string, scripts []string) string {
+	for _, s := range scripts {
+		sClean := strings.ToLower(s)
+		if strings.Contains(sClean, cNameLower) || strings.Contains(cNameLower, strings.TrimSuffix(strings.TrimPrefix(sClean, "start_"), ".sh")) {
+			return s
+		}
+	}
+	return fmt.Sprintf("start_%s.sh", cNameLower)
 }
 
 func (m *ModelManager) GetScriptContent(scriptName string) (string, error) {

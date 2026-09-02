@@ -1,0 +1,2 @@
+[permissions]
+allow = ["Bash=which reasonix 2>/dev/null || command -v reasonix 2>/dev/null || echo \"not in PATH\"", "Bash=reasonix --help 2>&1 | head -80", "Bash=reasonix session --help 2>&1", "Bash=reasonix session list --json 2>&1 | head -50", "Bash=reasonix task --help 2>&1", "Bash=ls -la /root/.reasonix/projects/-root-metax-workbench/sessions/ | grep \"^d\" | awk '{print $9}' | head -20"]
