@@ -131,9 +131,17 @@ export const FullscreenLogView: React.FC<FullscreenLogViewProps> = ({ name, mode
     }
     window.addEventListener('resize', handleResize)
     const t = setTimeout(handleResize, 100)
+
+    // 监听终端容器自身尺寸变化（如 StageTimeline 甘特图出现/收起导致高度改变），及时重新 fit 避免底部行被遮挡
+    const ro = new ResizeObserver(handleResize)
+    if (terminalRef.current) {
+      ro.observe(terminalRef.current)
+    }
+
     return () => {
       window.removeEventListener('resize', handleResize)
       clearTimeout(t)
+      ro.disconnect()
       term.dispose()
       xtermRef.current = null
       fitAddonRef.current = null
@@ -273,7 +281,7 @@ export const FullscreenLogView: React.FC<FullscreenLogViewProps> = ({ name, mode
       <StageTimeline logs={logsText} modelStatus={modelStatus} />
 
       {/* xterm 全屏挂载区域 */}
-      <div className="flex-1 p-2 overflow-hidden relative bg-[#090d16]">
+      <div className="flex-1 min-h-0 p-2 overflow-hidden relative bg-[#090d16]">
         <div ref={terminalRef} className="w-full h-full" />
       </div>
     </div>
