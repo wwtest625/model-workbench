@@ -13,10 +13,13 @@ import {
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
+import { StageTimeline } from './StageTimeline'
 
 interface FullscreenLogViewProps {
   /** 容器名或模型名，用于 /api/v1/models/logs 查询 */
   name: string
+  /** 模型当前状态（READY/WARMING_UP 等），用于加载链路判定 */
+  modelStatus?: string
 }
 
 const XTERM_THEME = {
@@ -47,7 +50,7 @@ const XTERM_THEME = {
  * 全屏日志视图（独立新标签页）
  * 打开方式: window.open(`/?logs=${encodeURIComponent(name)}`, '_blank')
  */
-export const FullscreenLogView: React.FC<FullscreenLogViewProps> = ({ name }) => {
+export const FullscreenLogView: React.FC<FullscreenLogViewProps> = ({ name, modelStatus }) => {
   const terminalRef = useRef<HTMLDivElement>(null)
   const xtermRef = useRef<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
@@ -60,6 +63,7 @@ export const FullscreenLogView: React.FC<FullscreenLogViewProps> = ({ name }) =>
   const [countdown, setCountdown] = useState(2)
   const [lastUpdateTime, setLastUpdateTime] = useState('')
   const currentLogsRef = useRef('')
+  const [logsText, setLogsText] = useState('')
 
   const writeLogsToTerminal = (term: Terminal, text: string) => {
     if (!text) return
@@ -68,6 +72,7 @@ export const FullscreenLogView: React.FC<FullscreenLogViewProps> = ({ name }) =>
     term.write(normalized)
     setLineCount(text.split('\n').length)
     currentLogsRef.current = text
+    setLogsText(text)
   }
 
   const fetchLogs = useCallback(async () => {
@@ -83,6 +88,7 @@ export const FullscreenLogView: React.FC<FullscreenLogViewProps> = ({ name }) =>
           writeLogsToTerminal(xtermRef.current, newLogs)
         } else {
           currentLogsRef.current = newLogs
+          setLogsText(newLogs)
           setLineCount(newLogs.split('\n').length)
         }
       }
@@ -166,6 +172,7 @@ export const FullscreenLogView: React.FC<FullscreenLogViewProps> = ({ name }) =>
   const handleClear = () => {
     lastLogsRef.current = ''
     currentLogsRef.current = ''
+    setLogsText('')
     xtermRef.current?.clear()
     setLineCount(0)
   }
@@ -261,6 +268,9 @@ export const FullscreenLogView: React.FC<FullscreenLogViewProps> = ({ name }) =>
           </button>
         </div>
       </div>
+
+      {/* 🚀 模型加载链路甘特图与生命周期耗时分析 */}
+      <StageTimeline logs={logsText} modelStatus={modelStatus} />
 
       {/* xterm 全屏挂载区域 */}
       <div className="flex-1 p-2 overflow-hidden relative bg-[#090d16]">

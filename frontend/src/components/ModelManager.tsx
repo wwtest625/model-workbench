@@ -272,9 +272,10 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
   const [isScriptMaximized, setIsScriptMaximized] = useState(false)
 
   const openLogs = (m: ModelCard) => {
-    // 在独立的新浏览器标签页中全屏查看容器日志
+    // 在独立的新浏览器标签页中全屏查看容器日志（附带模型状态供加载链路分析）
     const queryName = m.container_name || m.service_name || m.name
-    window.open(`/?logs=${encodeURIComponent(queryName)}`, '_blank')
+    const status = m.status ? `&status=${encodeURIComponent(m.status)}` : ''
+    window.open(`/?logs=${encodeURIComponent(queryName)}${status}`, '_blank')
   }
 
   const handleCopy = () => {

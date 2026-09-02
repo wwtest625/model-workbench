@@ -13,10 +13,11 @@ import { ToastContainer, ToastItem } from './components/Toast'
 import { HostConfig, EnvStatus, GPUInfo, ModelCard, LogFile } from './types'
 
 export default function App() {
-  // 全屏日志独立标签页路由: /?logs=<容器名或模型名>
-  const fullscreenLogName = new URLSearchParams(window.location.search).get('logs')
+  // 全屏日志独立标签页路由: /?logs=<容器名或模型名>&status=<模型状态>
+  const searchParams = new URLSearchParams(window.location.search)
+  const fullscreenLogName = searchParams.get('logs')
   if (fullscreenLogName) {
-    return <FullscreenLogView name={fullscreenLogName} />
+    return <FullscreenLogView name={fullscreenLogName} modelStatus={searchParams.get('status') || undefined} />
   }
 
   const [currentTab, setCurrentTab] = useState<'models' | 'hub' | 'benchmark' | 'playground' | 'logs'>('models')
