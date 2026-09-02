@@ -26,7 +26,6 @@ import {
 } from 'lucide-react'
 import { ModelCard, ModalState, DockerImageItem } from '../types'
 import { CodeEditor } from './CodeEditor'
-import { DockTerminalPanel, DockTab } from './DockTerminalPanel'
 import { parseImageTraits } from './manager/traits'
 import { RunningList } from './manager/RunningList'
 import { StoppedList } from './manager/StoppedList'
@@ -270,45 +269,12 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
     }
   }
 
-  // VS Code 风格底部多容器 Dock 终端状态
-  const [dockTabs, setDockTabs] = useState<DockTab[]>([])
-  const [activeDockTabId, setActiveDockTabId] = useState<string>('')
-  const [isDockOpen, setIsDockOpen] = useState<boolean>(false)
-  const [dockPaddingBottom, setDockPaddingBottom] = useState<number>(0)
   const [isScriptMaximized, setIsScriptMaximized] = useState(false)
 
   const openLogs = (m: ModelCard) => {
-    const tabId = m.container_name || m.service_name || m.name
-    setDockTabs((prev) => {
-      if (prev.some((t) => t.id === tabId)) return prev
-      return [
-        ...prev,
-        {
-          id: tabId,
-          modelName: m.name,
-          containerName: m.container_name || m.service_name || m.name,
-          status: m.status
-        }
-      ]
-    })
-    setActiveDockTabId(tabId)
-    setIsDockOpen(true)
-  }
-
-  const handleCloseDockTab = (tabId: string) => {
-    setDockTabs((prev) => {
-      const next = prev.filter((t) => t.id !== tabId)
-      if (next.length === 0) {
-        setIsDockOpen(false)
-      } else if (activeDockTabId === tabId) {
-        setActiveDockTabId(next[next.length - 1].id)
-      }
-      return next
-    })
-  }
-
-  const handleAddDockTab = (m: ModelCard) => {
-    openLogs(m)
+    // 在独立的新浏览器标签页中全屏查看容器日志
+    const queryName = m.container_name || m.service_name || m.name
+    window.open(`/?logs=${encodeURIComponent(queryName)}`, '_blank')
   }
 
   const handleCopy = () => {
@@ -317,7 +283,7 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
   }
 
   return (
-    <div className="space-y-4" style={{ paddingBottom: isDockOpen ? `${dockPaddingBottom + 16}px` : undefined }}>
+    <div className="space-y-4">
       {/* 方案 B：全景统一控制台导航与切片栏 */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-3.5 flex flex-wrap items-center justify-between gap-3.5 shadow-sm">
         {/* 左侧状态切片器：[运行中] [未启动] [本地镜像] */}
@@ -456,19 +422,6 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
         imageCounts={imageCounts}
         toggleExpandRepo={toggleExpandRepo}
         handleCopyImage={handleCopyImage}
-      />
-
-      {/* 🚀 VS Code 风格底部多容器 Dock 终端面板 (支持多Tab/折叠状态栏/拖拽拉伸/页面自适应不遮挡) */}
-      <DockTerminalPanel
-        tabs={dockTabs}
-        activeTabId={activeDockTabId}
-        models={models}
-        isOpen={isDockOpen}
-        onSelectTab={(tabId) => setActiveDockTabId(tabId)}
-        onCloseTab={handleCloseDockTab}
-        onClosePanel={() => setIsDockOpen(false)}
-        onAddTab={handleAddDockTab}
-        onHeightChange={(h) => setDockPaddingBottom(h)}
       />
 
       {/* 弹窗：启动脚本代码编辑器 (Monaco Editor) 与 Compose 片段查看器 */}

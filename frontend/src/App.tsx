@@ -7,11 +7,18 @@ import { ModelHub } from './components/ModelHub'
 import { BenchmarkConsole } from './components/BenchmarkConsole'
 import { Playground } from './components/Playground'
 import { LogArchive } from './components/LogArchive'
+import { FullscreenLogView } from './components/FullscreenLogView'
 import { ConfirmModal, ConfirmOptions } from './components/ConfirmModal'
 import { ToastContainer, ToastItem } from './components/Toast'
 import { HostConfig, EnvStatus, GPUInfo, ModelCard, LogFile } from './types'
 
 export default function App() {
+  // 全屏日志独立标签页路由: /?logs=<容器名或模型名>
+  const fullscreenLogName = new URLSearchParams(window.location.search).get('logs')
+  if (fullscreenLogName) {
+    return <FullscreenLogView name={fullscreenLogName} />
+  }
+
   const [currentTab, setCurrentTab] = useState<'models' | 'hub' | 'benchmark' | 'playground' | 'logs'>('models')
   const [hosts, setHosts] = useState<HostConfig[]>([])
   const [currentHost, setCurrentHost] = useState<HostConfig | null>(null)
