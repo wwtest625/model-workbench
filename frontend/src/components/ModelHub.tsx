@@ -63,9 +63,16 @@ export const ModelHub: React.FC<ModelHubProps> = ({ openConfirm, showToast }) =>
   } | null>(null)
 
   const orgCacheRef = useRef<{ [org: string]: HubModelItem[] }>({})
+  // 初始化时从 sessionStorage 恢复搜索缓存（页面刷新不丢，关闭标签页才过期）
+  try {
+    const saved = sessionStorage.getItem('mh_org_cache')
+    if (saved) orgCacheRef.current = JSON.parse(saved)
+  } catch (e) {}
   const localLoadedRef = useRef(false)
   const prevTasksCountRef = useRef(0)
   const prevRsyncCountRef = useRef(0)
+  // 缓存失效感知: 记录曾活跃的传输任务，任务从列表消失(完成/失败)时自动强刷本地资产缓存
+  const activeTaskNamesRef = useRef<Set<string>>(new Set())
 
   const [customOrgs, setCustomOrgs] = useState<string[]>([])
   const [showAddOrg, setShowAddOrg] = useState(false)
@@ -131,6 +138,18 @@ export const ModelHub: React.FC<ModelHubProps> = ({ openConfirm, showToast }) =>
         if (showToast) showToast('模型分发传输已完成！目标算力机已就绪', 'success')
       }
       prevRsyncCountRef.current = tasks.length
+
+      // 缓存失效感知: 分发任务消失(完成)后强刷本地资产缓存，新落盘模型立即可见
+      const currentNames = new Set(tasks.map((t) => t.model_name))
+      let finished = false
+      activeTaskNamesRef.current.forEach((n) => {
+        if (!currentNames.has(n)) finished = true
+      })
+      tasks.forEach((t) => activeTaskNamesRef.current.add(t.model_name))
+      if (finished && activeTaskNamesRef.current.size > 0) {
+        activeTaskNamesRef.current = new Set(currentNames)
+        fetchLocalAssets(true)
+      }
     } catch (e) {
       console.error('获取分发任务失败', e)
     }
@@ -140,10 +159,22 @@ export const ModelHub: React.FC<ModelHubProps> = ({ openConfirm, showToast }) =>
     fetchDownloadTasks()
     fetchRsyncTasks()
     const timer = setInterval(() => {
+      // 页面不可见时暂停轮询，回前台立即拉取一次
+      if (document.hidden) return
       fetchDownloadTasks()
       fetchRsyncTasks()
     }, 2500)
-    return () => clearInterval(timer)
+    const onVisible = () => {
+      if (!document.hidden) {
+        fetchDownloadTasks()
+        fetchRsyncTasks()
+      }
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      clearInterval(timer)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
   }, [])
 
   const openLogModal = async (dir: string, name: string) => {
@@ -264,6 +295,9 @@ export const ModelHub: React.FC<ModelHubProps> = ({ openConfirm, showToast }) =>
       setSearchResults(models)
       if (!query) {
         orgCacheRef.current[selectedOrg] = models
+        try {
+          sessionStorage.setItem('mh_org_cache', JSON.stringify(orgCacheRef.current))
+        } catch (e) {}
       }
     } catch (e) {
       console.error(e)
