@@ -125,6 +125,27 @@ lane panel [--port 3457]     # 启动可视化控制台
 
 ---
 
+## Funes 记忆与跨 Agent 经验召回
+
+位置: `/root/.local/bin/funes`（本地 LanceDB 向量库: `/root/.funes/memory`）
+
+已全量索引本机各 Agent（CodeBuddy、agy、codex）的历史会话切片（4400+ Chunks）。**在遇到以下场景时，各 Agent 均应在行动前主动执行 `funes recall` 查询前人决策与既有方案**：
+1. **环境与算力机配置**：如 146、76、55 服务器配置、vLLM/SGLang 启动参数、显存分配与端口；
+2. **工具与脚本用法**：如 `xssh` 参数细节、`manage.sh`、数据分发、WSL 避坑等；
+3. **接力与复用**：接手此前其他兄弟 Agent 做过的任务、代码审查或排查过的 Bug。
+
+### 常用指令
+
+```bash
+funes recall "<关键词/问题描述>" -k 3 --candidates 5   # 语义检索历史决策与代码（含来源/轮次/打分）
+funes get <session_id> --from <N> --to <M>             # 毫秒级查看命中会话的上下文片段
+funes status                                          # 查看当前本地记忆库统计
+```
+
+> **约定**：排查问题或修改关键配置前，优先通过 `funes recall` 吸收前人经验，避免重复排错与配置回退。
+
+---
+
 ## 联网搜索三件套
 
 `/root/.qoder/skills/` 下有: `build-with-exa`, `anysearch`, `use-tinyfish`

@@ -12,7 +12,7 @@ services:
     tty: true
     command: bash /workspace/start_vllm_deepseek_v4_0731_w8a8_105.sh
     environment:
-      - PATH=/opt/maca/bin:/opt/maca/mxgpu_llvm/bin:/opt/maca/ompi/bin:/opt/maca/ucx/bin:/opt/mxdriver/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+      - PATH=/opt/conda/bin:/opt/maca/bin:/opt/maca/mxgpu_llvm/bin:/opt/maca/ompi/bin:/opt/maca/ucx/bin:/opt/mxdriver/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
       - LD_LIBRARY_PATH=/opt/maca/mxshmem/lib:/opt/maca/lib:/opt/maca/ompi/lib:/opt/maca/ucx/lib:/opt/mxdriver/lib
       - MACA_PATH=/opt/maca
       - MACA_CLANG_PATH=/opt/maca/mxgpu_llvm/bin
