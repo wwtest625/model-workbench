@@ -24,7 +24,7 @@ hosts:
         port: 8001
         script: "start_vllm_qwen3_8_27b_fable_distill.sh"
         image: "cr.metax-tech.com/public-ai-release/maca/modelzoo.llm.vllm:1.0.3-maca.ai3.7.0.107-torch2.8-py310-ubuntu22.04-amd64"
-      - name: "DeepSeek-V4-Flash-W8A8 (105/16卡)"
+      - name: "DeepSeek-V4-Flash-W8A8 (105/8卡)"
         service_name: "vllm-dsv4-0731-w8a8-105"
         container_name: "vllm-dsv4-0731-w8a8-105"
         engine: "vLLM"

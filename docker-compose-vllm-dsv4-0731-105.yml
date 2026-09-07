@@ -3,10 +3,11 @@ services:
   # 引擎: MACA 3.8.2.105 + vLLM 0.25.0 (torch2.10/py312)
   vllm-dsv4-0731-w8a8:
     image: cr.metax-tech.com/public-ai-release/maca/modelzoo.llm.vllm:1.0.3-maca.ai3.8.2.105-torch2.10-py312-ubuntu22.04-amd64
-    container_name: vllm-dsv4-0731-w8a8
+    container_name: vllm-dsv4-0731-w8a8-105
     working_dir: /workspace
     privileged: true
     network_mode: "host"
+    ipc: "host"
     shm_size: "100gb"
     tty: true
     command: bash /workspace/start_vllm_deepseek_v4_0731_w8a8_105.sh
