@@ -12,7 +12,7 @@ hosts:
         service_name: "vllm-qwen3-8-27b"
         container_name: "vllm-qwen3-8-27b"
         engine: "vLLM"
-        tp: 8
+        tp: 4
         port: 8000
         script: "start_vllm_qwen3_8_27b.sh"
         image: "cr.metax-tech.com/public-ai-release/maca/modelzoo.llm.vllm:1.0.3-maca.ai3.7.0.107-torch2.8-py310-ubuntu22.04-amd64"
@@ -24,51 +24,44 @@ hosts:
         port: 8001
         script: "start_vllm_qwen3_8_27b_fable_distill.sh"
         image: "cr.metax-tech.com/public-ai-release/maca/modelzoo.llm.vllm:1.0.3-maca.ai3.7.0.107-torch2.8-py310-ubuntu22.04-amd64"
-      - name: "DeepSeek-V4-Flash-W8A8 (105/8卡)"
-        service_name: "vllm-dsv4-0731-w8a8-105"
-        container_name: "vllm-dsv4-0731-w8a8-105"
-        engine: "vLLM"
+      - name: "DeepSeek-V4-Flash-0731-W8A8"
+        service_name: "sglang-dsv4-0731-w8a8"
+        container_name: "sglang-dsv4-0731-w8a8"
+        engine: "SGLang"
         tp: 8
+        dp: 2
         port: 8000
-        script: "start_vllm_deepseek_v4_0731_w8a8_105.sh"
+        script: "start_sglang_deepseek_v4_0731_w8a8.sh"
+        image: "harbor.sh.mxcr.io/ai-release/maca/sglang:0.5.14-maca.ai3.8.2.116-torch2.10-py310-ubuntu22.04-amd64"
+      - name: "MiniMax-M2.7-W8A8"
+        service_name: "vllm-minimax-m2.7-w8a8"
+        container_name: "vllm-minimax-m2.7-w8a8"
+        engine: "vLLM"
+        tp: 16
+        port: 8000
+        script: "start_vllm_minimax_m2.7_w8a8.sh"
         image: "cr.metax-tech.com/public-ai-release/maca/modelzoo.llm.vllm:1.0.3-maca.ai3.8.2.105-torch2.10-py312-ubuntu22.04-amd64"
-      - name: "DeepSeek-V4-Flash-W8A8"
-        service_name: "vllm-deepseek-v4-0731-w8a8"
-        container_name: "vllm-deepseek-v4-0731-w8a8"
-        engine: "vLLM"
-        tp: 4
-        port: 8000
-        script: "start_vllm_deepseek_v4_0731_w8a8.sh"
-        image: "cr.metax-tech.com/public-ai-release/maca/modelzoo.llm.vllm:1.0.3-maca.ai3.7.0.107-torch2.8-py310-ubuntu22.04-amd64"
       - name: "MiniMax-M2.5-W8A8"
-        service_name: "vllm-minimax-m2-5-w8a8"
-        container_name: "vllm-minimax-m2-5-w8a8"
+        service_name: "vllm-minimax-m2.5-w8a8"
+        container_name: "vllm-minimax-m2.5-w8a8"
         engine: "vLLM"
-        tp: 4
+        tp: 16
         port: 8000
-        script: "start_vllm_minimax_m2_5_w8a8.sh"
+        script: "start_vllm_minimax.sh"
         image: "cr.metax-tech.com/public-ai-release/maca/modelzoo.llm.vllm:1.0.3-maca.ai3.7.0.107-torch2.8-py310-ubuntu22.04-amd64"
-      - name: "GLM-4.5-Air-W8A8"
-        service_name: "vllm-glm-4-5-air-w8a8"
-        container_name: "vllm-glm-4-5-air-w8a8"
+      - name: "MiniMax-M3-W8A8"
+        service_name: "vllm-minimax-m3-w8a8"
+        container_name: "vllm-minimax-m3-w8a8"
         engine: "vLLM"
-        tp: 4
+        tp: 16
         port: 8000
-        script: "start_vllm_glm_4_5_air_w8a8.sh"
-        image: "cr.metax-tech.com/public-ai-release/maca/modelzoo.llm.vllm:1.0.3-maca.ai3.7.0.107-torch2.8-py310-ubuntu22.04-amd64"
-      - name: "GLM-4-32B-FP8"
-        service_name: "vllm-glm-4-32b-fp8"
-        container_name: "vllm-glm-4-32b-fp8"
-        engine: "vLLM"
-        tp: 4
-        port: 8000
-        script: "start_vllm_glm_4_32b_fp8.sh"
-        image: "cr.metax-tech.com/public-ai-release/maca/modelzoo.llm.vllm:1.0.3-maca.ai3.7.0.107-torch2.8-py310-ubuntu22.04-amd64"
+        script: "start_vllm_minimax_m3_w8a8.sh"
+        image: "cr.metax-tech.com/public-ai-release/maca/modelzoo.llm.vllm:1.0.3-maca.ai3.8.2.208-torch2.10-py312-ubuntu22.04-amd64"
       - name: "GLM-4.7-W8A8"
         service_name: "vllm-glm-4-7-w8a8"
         container_name: "vllm-glm4-7"
         engine: "vLLM"
-        tp: 4
+        tp: 16
         port: 8000
         script: "start_vllm_glm4.7.sh"
         image: "cr.metax-tech.com/public-ai-release/maca/modelzoo.llm.vllm:1.0.3-maca.ai3.7.0.107-torch2.8-py310-ubuntu22.04-amd64"

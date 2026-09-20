@@ -44,6 +44,14 @@ export const GpuTopology: React.FC<GpuTopologyProps> = ({ gpus }) => {
           const cardId = gpu.id.startsWith('HCU-') ? gpu.id : `GPU ${gpu.id}`
           const modelName = gpu.name || 'GPU'
 
+          // 温度三档色彩：<60°C 绿色(正常)，60°C~75°C 黄色(温热/告警)，>=75°C 红色(高热)
+          const tempVal = Number(gpu.temp) || 0
+          const tempStyle = tempVal >= 75
+            ? { badge: 'bg-rose-500/15 border-rose-500/30 text-rose-400 font-semibold', dot: 'bg-rose-400' }
+            : tempVal >= 60
+            ? { badge: 'bg-amber-500/15 border-amber-500/30 text-amber-400 font-medium', dot: 'bg-amber-400' }
+            : { badge: 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400 font-medium', dot: 'bg-emerald-400' }
+
           return (
             <div
               key={gpu.id || idx}
@@ -57,7 +65,14 @@ export const GpuTopology: React.FC<GpuTopologyProps> = ({ gpus }) => {
                     {modelName}
                   </span>
                 </div>
-                <span className="text-slate-400 text-xs shrink-0">{gpu.temp}°C · {gpu.power}W</span>
+                <div className="flex items-center gap-1.5 text-xs font-mono shrink-0">
+                  <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] border ${tempStyle.badge}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${tempStyle.dot}`} />
+                    {gpu.temp}°C
+                  </span>
+                  <span className="text-slate-600">·</span>
+                  <span className="text-slate-400 text-[11px]">{gpu.power}W</span>
+                </div>
               </div>
 
               {/* 显存进度条 */}

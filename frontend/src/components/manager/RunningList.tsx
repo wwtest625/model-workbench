@@ -1,6 +1,6 @@
 import React from 'react'
-import { Square, FileCode, Container, ScrollText, RotateCw, ChevronDown, ChevronRight, Activity, AlertCircle, Tag } from 'lucide-react'
-import { ModelCard } from '../../types'
+import { Square, FileCode, Container, ScrollText, RotateCw, ChevronDown, ChevronRight, Activity, AlertCircle, Tag, Trash2 } from 'lucide-react'
+import { ModelCard, getMacaVersion } from '../../types'
 
 interface RunningListProps {
   openLogs: (m: ModelCard) => void
@@ -9,7 +9,8 @@ interface RunningListProps {
   operatingModel: boolean
   onStopModel: (model: ModelCard) => void
   onRestartModel?: (model: ModelCard) => void
-  setStatusTab: (t: 'RUNNING' | 'STOPPED' | 'IMAGES') => void
+  onDeleteModel?: (model: ModelCard) => void
+  setStatusTab: (t: 'RUNNING' | 'STOPPED' | 'IMAGES' | 'WEIGHTS') => void
   searchQuery: string
   filteredList: ModelCard[]
   expandedModels: any
@@ -17,7 +18,7 @@ interface RunningListProps {
   toggleExpand: any
 }
 
-export const RunningList: React.FC<RunningListProps> = ({ openLogs, openScript, openCompose, operatingModel, onStopModel, onRestartModel, setStatusTab, searchQuery, filteredList, expandedModels, statusTab, toggleExpand }) => {
+export const RunningList: React.FC<RunningListProps> = ({ openLogs, openScript, openCompose, operatingModel, onStopModel, onRestartModel, onDeleteModel, setStatusTab, searchQuery, filteredList, expandedModels, statusTab, toggleExpand }) => {
   return (
 statusTab === 'RUNNING' && (
       <div className="space-y-3">
@@ -38,6 +39,7 @@ statusTab === 'RUNNING' && (
         ) : (
           filteredList.map((m) => {
             const isExpanded = expandedModels[m.name] ?? false
+            const macaVer = getMacaVersion(m)
 
             return (
               <div
@@ -67,7 +69,7 @@ statusTab === 'RUNNING' && (
                         <ChevronRight className="w-4 h-4 text-slate-400 transition-transform" />
                       )}
                     </button>
-                    <div className="flex items-center gap-2.5 truncate">
+                    <div className="flex items-center gap-2 truncate flex-wrap">
                       <span className="font-bold text-slate-100 text-sm tracking-wide truncate">
                         {m.name}
                       </span>
@@ -80,15 +82,16 @@ statusTab === 'RUNNING' && (
                       >
                         {m.engine}
                       </span>
+                      {macaVer && (
+                        <span className="text-[11px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 font-mono shrink-0">
+                          {macaVer}
+                        </span>
+                      )}
                     </div>
                   </div>
 
                   {/* 折叠状态下右侧快捷信息与操作 */}
                   <div className="flex items-center gap-3 shrink-0" onClick={(e) => e.stopPropagation()}>
-                    <span className="text-xs font-mono text-slate-400 hidden sm:inline-block">
-                      Port: <span className="text-slate-200 font-semibold">{m.port}</span>
-                    </span>
-
                     {/* 5 阶生命周期状态徽章 */}
                     {m.status === 'READY' ? (
                       <span className="text-xs font-mono px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/40 flex items-center gap-1.5 font-medium">
@@ -184,11 +187,14 @@ statusTab === 'RUNNING' && (
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs font-mono pt-2">
                       <div className="bg-slate-900/90 p-2.5 rounded-lg border border-slate-800">
                         <span className="text-slate-500 block mb-0.5">推理框架</span>
-                        <span className="text-indigo-300 font-semibold">{m.engine}</span>
+                        <span className="text-indigo-300 font-semibold flex items-center gap-1.5">
+                          <span>{m.engine}</span>
+                          {macaVer && <span className="text-xs font-normal text-slate-400">({macaVer})</span>}
+                        </span>
                       </div>
                       <div className="bg-slate-900/90 p-2.5 rounded-lg border border-slate-800">
                         <span className="text-slate-500 block mb-0.5">并行张量 TP</span>
-                        <span className="text-slate-200 font-semibold">{m.tp} 卡</span>
+                        <span className="text-slate-200 font-semibold">TP {m.tp}</span>
                       </div>
                       <div className="bg-slate-900/90 p-2.5 rounded-lg border border-slate-800">
                         <span className="text-slate-500 block mb-0.5">服务端口</span>
@@ -222,8 +228,8 @@ statusTab === 'RUNNING' && (
                       )
                     })()}
 
-                    {/* 三大透视操作栏 */}
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1 text-xs">
+                    {/* 透视操作与生命周期栏 */}
+                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5 pt-1 text-xs">
                       <button
                         onClick={() => openScript(m)}
                         className="py-2 px-3 bg-slate-950 hover:bg-slate-800 text-slate-300 rounded-lg border border-slate-800 flex items-center justify-center gap-1.5 transition font-medium cursor-pointer"
@@ -245,6 +251,16 @@ statusTab === 'RUNNING' && (
                         <ScrollText className="w-3.5 h-3.5 text-indigo-400" />
                         <span>实时日志</span>
                       </button>
+                      {onDeleteModel && (
+                        <button
+                          onClick={() => onDeleteModel(m)}
+                          className="py-2 px-3 bg-rose-950/40 hover:bg-rose-950/80 text-rose-300 rounded-lg border border-rose-800/80 flex items-center justify-center gap-1.5 transition font-medium cursor-pointer"
+                          title="强制下线并彻底删除此模型编排"
+                        >
+                          <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                          <span>删除模型</span>
+                        </button>
+                      )}
                     </div>
                   </div>
                 )}

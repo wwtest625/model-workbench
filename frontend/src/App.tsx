@@ -164,7 +164,7 @@ export default function App() {
     openConfirm({
       title: '启动模型服务确认',
       message: '确定要在算力机上启动【' + m.name + '】服务吗？',
-      detail: '启动引擎: ' + m.engine + ' · TP=' + m.tp + ' · Port=' + m.port + ' · 脚本: ' + m.script,
+      detail: '启动引擎: ' + m.engine + ' · TP ' + m.tp + ' · 脚本: ' + m.script,
       confirmText: '确认启动',
       type: 'primary',
       onConfirm: async () => {
@@ -211,6 +211,44 @@ export default function App() {
           setTimeout(fetchModels, 1500)
         } catch (e: any) {
           showToast('停止失败: ' + e.message, 'error')
+        }
+      }
+    })
+  }
+
+  // 删除模型确认与执行
+  const handleDeleteModel = (m: ModelCard) => {
+    openConfirm({
+      title: '删除模型确认',
+      message: '确定要删除【' + m.name + '】吗？',
+      detail: '仅清理：① 容器实例 (docker rm)；② 启动脚本移至归档；③ Compose 编排片段与配置。★ 不会删除任何底层大模型权重文件与 Docker 镜像！',
+      confirmText: '确认删除',
+      type: 'danger',
+      onConfirm: async () => {
+        showToast('正在删除模型【' + m.name + '】...', 'info')
+        setOperatingModel(true)
+        try {
+          const res = await fetch('/api/v1/models/delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name: m.name,
+              service_name: m.service_name || '',
+              container_name: m.container_name || '',
+              script: m.script || ''
+            })
+          })
+          const data = await res.json()
+          if (res.ok) {
+            showToast(data.message || '【' + m.name + '】已成功删除', 'success')
+            fetchModels()
+          } else {
+            showToast(data.error || '删除失败', 'error')
+          }
+        } catch (e: any) {
+          showToast('删除失败: ' + e.message, 'error')
+        } finally {
+          setOperatingModel(false)
         }
       }
     })
@@ -403,6 +441,7 @@ export default function App() {
             onStartModel={handleStartModel}
             onRestartModel={handleRestartModel}
             onStopModel={handleStopModel}
+            onDeleteModel={handleDeleteModel}
             onStopAll={handleStopAll}
             showToast={showToast}
           />

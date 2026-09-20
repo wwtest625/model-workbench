@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"metax-workbench/internal/config"
@@ -18,6 +19,7 @@ type ModelCard struct {
 	ServiceName   string `json:"service_name"`
 	ContainerName string `json:"container_name"`
 	Engine        string `json:"engine"` // vLLM / SGLang
+	MacaVersion   string `json:"maca_version,omitempty"`
 	TP            int    `json:"tp"`
 	Port          int    `json:"port"`
 	Script        string `json:"script"`
@@ -27,6 +29,15 @@ type ModelCard struct {
 	PingMs        int64  `json:"ping_ms,omitempty"`
 	Uptime        string `json:"uptime,omitempty"`
 	PID           string `json:"pid"`
+}
+
+var macaVerRegex = regexp.MustCompile(`(maca\.ai\d+(?:\.\d+)+|ai\d+(?:\.\d+)+)`)
+
+func extractMacaVersion(image string) string {
+	if image == "" {
+		return ""
+	}
+	return macaVerRegex.FindString(image)
 }
 
 type ModelManager struct{}
@@ -78,6 +89,7 @@ result = {
     "docker_ps": [],
     "probe": {},
     "scripts": [],
+    "compose_services": [],
     "running_cmd": ""
 }
 
@@ -153,16 +165,20 @@ try:
             if target_port:
                 info["port"] = target_port
 
-            if "sglang" in cmd_and_logs:
-                info["engine"] = "SGLang"
-            elif "vllm" in cmd_and_logs:
+            if "vllm" in name_lower or "vllm" in insp_cmd.lower():
                 info["engine"] = "vLLM"
+            elif "sglang" in name_lower or "sglang" in insp_cmd.lower():
+                info["engine"] = "SGLang"
             elif "lmdeploy" in cmd_and_logs:
                 info["engine"] = "LMDeploy"
             elif "tgi" in cmd_and_logs:
                 info["engine"] = "TGI"
             elif "ollama" in cmd_and_logs:
                 info["engine"] = "Ollama"
+            elif "sglang" in cmd_and_logs and "vllm" not in cmd_and_logs:
+                info["engine"] = "SGLang"
+            elif "vllm" in cmd_and_logs:
+                info["engine"] = "vLLM"
 
             m_tp = re.search(r"(?:-tp|--tensor-parallel-size)[=\s]+(\d+)", cmd_and_logs) or re.search(r"\btp[=:\s]+(\d+)", cmd_and_logs)
             if m_tp:
@@ -217,6 +233,50 @@ try:
 
         result["probe"][name_lower] = info
 
+    # 解析 docker-compose-models.yml 中的未启动服务定义
+    compose_path = os.path.join(workspace, "docker-compose-models.yml")
+    if os.path.exists(compose_path):
+        try:
+            with open(compose_path, "r", errors="ignore") as f:
+                c_text = f.read()
+            curr_svc = None
+            svc_info = {}
+            for line in c_text.splitlines():
+                if line.strip().startswith("#"):
+                    continue
+                m_svc = re.match(r"^[ ]{2}([a-zA-Z0-9_.-]+):[ ]*$", line)
+                if m_svc:
+                    if curr_svc and svc_info:
+                        result["compose_services"].append(svc_info)
+                    curr_svc = m_svc.group(1)
+                    svc_info = {
+                        "service_name": curr_svc,
+                        "container_name": curr_svc,
+                        "image": "",
+                        "command": "",
+                        "script": ""
+                    }
+                elif curr_svc:
+                    if re.match(r"^[a-zA-Z0-9_.-]+:[ ]*$", line):
+                        if curr_svc and svc_info:
+                            result["compose_services"].append(svc_info)
+                        curr_svc = None
+                        svc_info = {}
+                        continue
+                    m_cn = re.search(r"container_name:\s*([a-zA-Z0-9_.-]+)", line)
+                    if m_cn:
+                        svc_info["container_name"] = m_cn.group(1)
+                    m_im = re.search(r"image:\s*([^\s#]+)", line)
+                    if m_im:
+                        svc_info["image"] = m_im.group(1)
+                    m_sh = re.search(r"start_[\w-]+\.sh", line)
+                    if m_sh:
+                        svc_info["script"] = m_sh.group(0)
+            if curr_svc and svc_info:
+                result["compose_services"].append(svc_info)
+        except Exception:
+            pass
+
     for f in glob.glob(os.path.join(workspace, "*.sh")) + glob.glob(os.path.join(workspace, "*", "*.sh")):
         result["scripts"].append(os.path.basename(f))
 
@@ -231,6 +291,14 @@ print(json.dumps(result, ensure_ascii=False))
 		return nil, "", err
 	}
 
+	type remoteComposeService struct {
+		ServiceName   string `json:"service_name"`
+		ContainerName string `json:"container_name"`
+		Image         string `json:"image"`
+		Command       string `json:"command"`
+		Script        string `json:"script"`
+	}
+
 	type remoteProbeResponse struct {
 		DockerPs []struct {
 			Name   string `json:"name"`
@@ -238,10 +306,11 @@ print(json.dumps(result, ensure_ascii=False))
 			Status string `json:"status"`
 			Ports  string `json:"ports"`
 		} `json:"docker_ps"`
-		Probe      map[string]smartProbeItem `json:"probe"`
-		Scripts    []string                  `json:"scripts"`
-		RunningCmd string                    `json:"running_cmd"`
-		Error      string                    `json:"error"`
+		Probe           map[string]smartProbeItem `json:"probe"`
+		Scripts         []string                  `json:"scripts"`
+		ComposeServices []remoteComposeService   `json:"compose_services"`
+		RunningCmd      string                    `json:"running_cmd"`
+		Error           string                    `json:"error"`
 	}
 
 	var pResp remoteProbeResponse
@@ -250,6 +319,7 @@ print(json.dumps(result, ensure_ascii=False))
 		log.Printf("[DiscoverModels] JSON unmarshal error: %v, raw: %s", err, cleanOutput)
 		return nil, "", err
 	}
+	log.Printf("[DiscoverModels] host: %s, compose_services count: %d, docker_ps: %d, err: %s", h.Name, len(pResp.ComposeServices), len(pResp.DockerPs), pResp.Error)
 
 	runningCmd := pResp.RunningCmd
 	probeMap := make(map[string]smartProbeItem)
@@ -275,6 +345,8 @@ print(json.dumps(result, ensure_ascii=False))
 
 	result := make([]ModelCard, 0)
 	handledContainers := make(map[string]bool)
+	handledScripts := make(map[string]bool)
+	handledModels := make(map[string]bool)
 
 	// 1. 优先根据当前主机专属预设 h.Models 加载
 	for _, preset := range h.Models {
@@ -293,13 +365,22 @@ print(json.dumps(result, ensure_ascii=False))
 			matchedProbe = &p
 		}
 
-		if meta, ok := cMap[cNameLower]; ok {
+		if cNameLower != "" {
 			handledContainers[cNameLower] = true
+		}
+		if sNameLower != "" {
+			handledContainers[sNameLower] = true
+		}
+		if preset.Script != "" {
+			handledScripts[strings.ToLower(preset.Script)] = true
+		}
+		handledModels[strings.ToLower(preset.Name)] = true
+
+		if meta, ok := cMap[cNameLower]; ok {
 			if meta.image != "" {
 				img = meta.image
 			}
 		} else if meta, ok := cMap[sNameLower]; ok {
-			handledContainers[sNameLower] = true
 			if meta.image != "" {
 				img = meta.image
 			}
@@ -333,6 +414,7 @@ print(json.dumps(result, ensure_ascii=False))
 			ServiceName:   preset.ServiceName,
 			ContainerName: preset.ContainerName,
 			Engine:        engine,
+			MacaVersion:   extractMacaVersion(img),
 			TP:            tp,
 			Port:          port,
 			Script:        preset.Script,
@@ -394,11 +476,27 @@ print(json.dumps(result, ensure_ascii=False))
 					script = matchScriptForContainer(cNameLower, availableScripts)
 				}
 
+				if script != "" && handledScripts[strings.ToLower(script)] {
+					continue
+				}
+
+				displayName := prettifyComposeServiceName(cName, cName, script)
+				if handledModels[strings.ToLower(displayName)] {
+					continue
+				}
+
+				handledContainers[cNameLower] = true
+				if script != "" {
+					handledScripts[strings.ToLower(script)] = true
+				}
+				handledModels[strings.ToLower(displayName)] = true
+
 				result = append(result, ModelCard{
-					Name:          cName,
+					Name:          displayName,
 					ServiceName:   cName,
 					ContainerName: cName,
 					Engine:        engine,
+					MacaVersion:   extractMacaVersion(cImg),
 					TP:            tp,
 					Port:          port,
 					Script:        script,
@@ -412,11 +510,150 @@ print(json.dumps(result, ensure_ascii=False))
 			}
 	}
 
+	// 3. 扫描并自动补全 docker-compose-models.yml 中已编排但未被收录的模型服务
+	for _, cs := range pResp.ComposeServices {
+		sName := strings.TrimSpace(cs.ServiceName)
+		cName := strings.TrimSpace(cs.ContainerName)
+		if cName == "" {
+			cName = sName
+		}
+		sNameLower := strings.ToLower(sName)
+		cNameLower := strings.ToLower(cName)
+
+		if sNameLower == "" || handledContainers[sNameLower] || handledContainers[cNameLower] {
+			continue
+		}
+
+		script := cs.Script
+		if script == "" {
+			script = matchScriptForContainer(sNameLower, availableScripts)
+		}
+		if script == "" {
+			script = matchScriptForContainer(cNameLower, availableScripts)
+		}
+
+		// 启动脚本去重：若同一脚本已被纳管，避免重复
+		if script != "" && handledScripts[strings.ToLower(script)] {
+			continue
+		}
+
+		displayName := prettifyComposeServiceName(sName, cName, script)
+		if handledModels[strings.ToLower(displayName)] {
+			continue
+		}
+
+		handledContainers[sNameLower] = true
+		handledContainers[cNameLower] = true
+		if script != "" {
+			handledScripts[strings.ToLower(script)] = true
+		}
+		handledModels[strings.ToLower(displayName)] = true
+
+		engine := "vLLM"
+		if strings.Contains(sNameLower, "sglang") || strings.Contains(strings.ToLower(cs.Image), "sglang") || strings.Contains(strings.ToLower(script), "sglang") {
+			engine = "SGLang"
+		}
+
+		tp := inferTPFromServiceName(sNameLower, script)
+
+		result = append(result, ModelCard{
+			Name:          displayName,
+			ServiceName:   sName,
+			ContainerName: cName,
+			Engine:        engine,
+			MacaVersion:   extractMacaVersion(cs.Image),
+			TP:            tp,
+			Port:          8000,
+			Script:        script,
+			Image:         cs.Image,
+			Status:        "STOPPED",
+			StatusDetail:  "",
+			PingMs:        0,
+			Uptime:        "未启动",
+			PID:           "",
+		})
+	}
 
 	return result, runningCmd, nil
 }
 
-// ---------- 纯逻辑辅助函数（便于单元测试） ----------
+func prettifyComposeServiceName(sName, cName, script string) string {
+	combined := strings.ToLower(sName + " " + cName + " " + script)
+
+	// 1. DeepSeek 系列
+	if strings.Contains(combined, "0731") {
+		return "DeepSeek-V4-Flash-0731-W8A8"
+	} else if strings.Contains(combined, "flexsmq") || strings.Contains(combined, "1m") {
+		return "DeepSeek-V4-Flash-FlexSMQ-AWQ-W8A8"
+	} else if strings.Contains(combined, "deepseek-v4") || strings.Contains(combined, "dsv4") {
+		return "DeepSeek-V4-Flash"
+	}
+
+	// 2. MiniMax 系列
+	if strings.Contains(combined, "m3") || strings.Contains(combined, "m-3") {
+		return "MiniMax-M3-W8A8"
+	} else if strings.Contains(combined, "m2.7") || strings.Contains(combined, "m2-7") {
+		return "MiniMax-M2.7-W8A8"
+	} else if strings.Contains(combined, "m2.5") || strings.Contains(combined, "m2-5") || strings.Contains(combined, "minimax") {
+		return "MiniMax-M2.5-W8A8"
+	}
+
+	// 3. GLM 系列
+	if strings.Contains(combined, "glm5.3") || strings.Contains(combined, "glm5_3") {
+		return "GLM-5.3-Flash"
+	} else if strings.Contains(combined, "glm4.7") || strings.Contains(combined, "glm-4-7") || strings.Contains(combined, "glm4-7") {
+		return "GLM-4.7-W8A8"
+	}
+
+	// 4. Qwen 系列（带官方完整规格后缀与激活参数）
+	if strings.Contains(combined, "fable") {
+		return "Qwen3.8-27B-Fable-Distill"
+	} else if strings.Contains(combined, "dflash2") {
+		return "Qwen3.8-27B-DFlash2"
+	} else if strings.Contains(combined, "qwen3.8") || strings.Contains(combined, "qwen3-8") || strings.Contains(combined, "qwen3_8") {
+		return "Qwen3.8-27B"
+	} else if strings.Contains(combined, "235b") {
+		return "Qwen3-235B-A22B"
+	} else if strings.Contains(combined, "122b") {
+		return "Qwen3.5-122B-A10B"
+	} else if strings.Contains(combined, "397b") {
+		return "Qwen3.5-397B-A17B-W8A8"
+	} else if strings.Contains(combined, "36-35b") || strings.Contains(combined, "36_35b") || strings.Contains(combined, "3.6-35b") {
+		return "Qwen3.6-35B-A3B"
+	} else if strings.Contains(combined, "36-27b") || strings.Contains(combined, "36_27b") || strings.Contains(combined, "3.6-27b") {
+		return "Qwen3.6-27B"
+	} else if strings.Contains(combined, "3.5-27b") || strings.Contains(combined, "3-5-27b") || strings.Contains(combined, "qwen-27b") {
+		return "Qwen3.5-27B"
+	} else if strings.Contains(combined, "3.5-9b") || strings.Contains(combined, "3-5-9b") || strings.Contains(combined, "qwen-9b") {
+		return "Qwen3.5-9B"
+	}
+
+	raw := sName
+	if raw == "" {
+		raw = cName
+	}
+	cleaned := strings.TrimPrefix(strings.TrimPrefix(raw, "vllm-"), "sglang-")
+	return cleaned
+}
+
+func inferTPFromServiceName(sName, script string) int {
+	combined := strings.ToLower(sName + " " + script)
+	if strings.Contains(combined, "235b") || strings.Contains(combined, "397b") ||
+		strings.Contains(combined, "m2.7") || strings.Contains(combined, "m2.5") || strings.Contains(combined, "minimax") ||
+		strings.Contains(combined, "glm4.7") || strings.Contains(combined, "glm-4-7") {
+		return 16
+	} else if strings.Contains(combined, "122b") || strings.Contains(combined, "dsv4") || strings.Contains(combined, "deepseek") || strings.Contains(combined, "glm5") {
+		return 8
+	} else if strings.Contains(combined, "27b") || strings.Contains(combined, "35b") || strings.Contains(combined, "fable") {
+		if strings.Contains(combined, "3.5-27b") || strings.Contains(combined, "3-5-27b") {
+			return 2
+		}
+		return 4
+	} else if strings.Contains(combined, "9b") {
+		return 1
+	}
+	return 4
+}
 
 // normalizePresetName 规范化预设的容器/服务名：小写化并清洗 CRLF 与空白字符
 func normalizePresetName(s string) string {
@@ -467,15 +704,64 @@ func inferEngineFromNames(containerName, imageName string) string {
 	return "vLLM"
 }
 
-// matchScriptForContainer 为容器在工作空间脚本列表中匹配启动脚本，未命中时按约定生成默认名
+// matchScriptForContainer 在工作空间真实脚本列表中精准匹配启动脚本，绝不虚构不存在的文件
 func matchScriptForContainer(cNameLower string, scripts []string) string {
+	if len(scripts) == 0 {
+		return ""
+	}
+
+	// 1. 完全包含与基础名比对
 	for _, s := range scripts {
 		sClean := strings.ToLower(s)
-		if strings.Contains(sClean, cNameLower) || strings.Contains(cNameLower, strings.TrimSuffix(strings.TrimPrefix(sClean, "start_"), ".sh")) {
+		sBase := strings.TrimSuffix(strings.TrimPrefix(sClean, "start_"), ".sh")
+		sBase = strings.TrimPrefix(sBase, "vllm_")
+		sBase = strings.TrimPrefix(sBase, "sglang_")
+		if strings.Contains(sClean, cNameLower) || (sBase != "" && strings.Contains(cNameLower, sBase)) {
 			return s
 		}
 	}
-	return fmt.Sprintf("start_%s.sh", cNameLower)
+
+	// 2. 关键特征提取匹配
+	for _, s := range scripts {
+		sLower := strings.ToLower(s)
+		if strings.Contains(cNameLower, "235b") && strings.Contains(sLower, "235b") {
+			return s
+		}
+		if strings.Contains(cNameLower, "122b") && strings.Contains(sLower, "122b") {
+			return s
+		}
+		if strings.Contains(cNameLower, "397b") && strings.Contains(sLower, "397b") {
+			return s
+		}
+		if strings.Contains(cNameLower, "35b") && strings.Contains(sLower, "35b") {
+			return s
+		}
+		if strings.Contains(cNameLower, "27b") && strings.Contains(sLower, "27b") {
+			if strings.Contains(cNameLower, "36") == strings.Contains(sLower, "36") &&
+				strings.Contains(cNameLower, "35") == strings.Contains(sLower, "35") &&
+				strings.Contains(cNameLower, "38") == strings.Contains(sLower, "38") {
+				return s
+			}
+		}
+		if strings.Contains(cNameLower, "9b") && strings.Contains(sLower, "9b") {
+			return s
+		}
+		if strings.Contains(cNameLower, "glm4") && strings.Contains(sLower, "glm4") {
+			return s
+		}
+		if strings.Contains(cNameLower, "glm5") && strings.Contains(sLower, "glm5") {
+			return s
+		}
+		if strings.Contains(cNameLower, "m2.7") && strings.Contains(sLower, "m2.7") {
+			return s
+		}
+		if (strings.Contains(cNameLower, "m2.5") || strings.Contains(cNameLower, "m2-5") || strings.Contains(cNameLower, "minimax")) &&
+			(strings.Contains(sLower, "minimax.sh") || strings.Contains(sLower, "m2.5")) {
+			return s
+		}
+	}
+
+	return ""
 }
 
 func (m *ModelManager) GetScriptContent(scriptName string) (string, error) {
@@ -534,7 +820,126 @@ func (m *ModelManager) GetComposeSection(serviceName, modelName string) (string,
 		return fmt.Sprintf("# 当前主机 (%s) 工作空间 %s 暂无 docker-compose-models.yml 编排文件\n# 建议在远端配置并管理大模型服务容器\n", h.Name, h.Workspace), nil
 	}
 
-	return res.Stdout, nil
+	section := extractComposeServiceSection(res.Stdout, serviceName, modelName)
+	return section, nil
+}
+
+func extractComposeServiceSection(fullYaml, serviceName, modelName string) string {
+	cleanSvc := strings.TrimSpace(serviceName)
+	cleanModel := strings.TrimSpace(modelName)
+	if cleanSvc == "" && cleanModel == "" {
+		return fullYaml
+	}
+
+	lines := strings.Split(fullYaml, "\n")
+	svcRegex := regexp.MustCompile(`^[ ]{2}([a-zA-Z0-9_.-]+):[ ]*$`)
+	topRegex := regexp.MustCompile(`^[a-zA-Z0-9_.-]+:[ ]*$`)
+
+	type serviceBlock struct {
+		name         string
+		startIdx     int
+		commentStart int
+		endIdx       int
+	}
+
+	var blocks []*serviceBlock
+	var currentBlock *serviceBlock
+
+	for i := 0; i < len(lines); i++ {
+		line := lines[i]
+		if topRegex.MatchString(line) && !strings.HasPrefix(line, "  ") {
+			if currentBlock != nil {
+				currentBlock.endIdx = i
+				currentBlock = nil
+			}
+			continue
+		}
+
+		if m := svcRegex.FindStringSubmatch(line); len(m) > 1 {
+			if currentBlock != nil {
+				currentBlock.endIdx = i
+			}
+			sName := m[1]
+			cStart := i
+			for k := i - 1; k >= 0; k-- {
+				trimmed := strings.TrimSpace(lines[k])
+				if strings.HasPrefix(trimmed, "#") {
+					cStart = k
+				} else if trimmed == "" {
+					continue
+				} else {
+					break
+				}
+			}
+
+			currentBlock = &serviceBlock{
+				name:         sName,
+				startIdx:     i,
+				commentStart: cStart,
+				endIdx:       len(lines),
+			}
+			blocks = append(blocks, currentBlock)
+		}
+	}
+
+	var matchedBlock *serviceBlock
+	// 1. 精确匹配 serviceName
+	if cleanSvc != "" {
+		for _, b := range blocks {
+			if strings.EqualFold(b.name, cleanSvc) {
+				matchedBlock = b
+				break
+			}
+		}
+	}
+
+	// 2. 匹配 container_name
+	if matchedBlock == nil {
+		for _, b := range blocks {
+			blockContent := strings.Join(lines[b.startIdx:b.endIdx], "\n")
+			if cleanSvc != "" && strings.Contains(blockContent, fmt.Sprintf("container_name: %s", cleanSvc)) {
+				matchedBlock = b
+				break
+			}
+			if cleanModel != "" && strings.Contains(blockContent, fmt.Sprintf("container_name: %s", cleanModel)) {
+				matchedBlock = b
+				break
+			}
+		}
+	}
+
+	// 3. 模糊匹配名字包含
+	if matchedBlock == nil {
+		for _, b := range blocks {
+			if cleanSvc != "" && (strings.Contains(strings.ToLower(b.name), strings.ToLower(cleanSvc)) || strings.Contains(strings.ToLower(cleanSvc), strings.ToLower(b.name))) {
+				matchedBlock = b
+				break
+			}
+			if cleanModel != "" && strings.Contains(strings.ToLower(b.name), strings.ToLower(cleanModel)) {
+				matchedBlock = b
+				break
+			}
+		}
+	}
+
+	if matchedBlock != nil {
+		end := matchedBlock.endIdx
+		for end > matchedBlock.startIdx {
+			trimmed := strings.TrimSpace(lines[end-1])
+			if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+				end--
+			} else {
+				break
+			}
+		}
+		if end < matchedBlock.startIdx {
+			end = matchedBlock.endIdx
+		}
+		snippet := strings.Join(lines[matchedBlock.commentStart:end], "\n")
+		return snippet
+	}
+
+	return fmt.Sprintf("# 未在 docker-compose-models.yml 中找到匹配的服务 [%s]\n# 您可以查阅全量编排或在此补充该容器的服务定义\n", cleanSvc)
 }
 
 func (m *ModelManager) StartModel(serviceOrScript string) error {
@@ -736,4 +1141,357 @@ print(json.dumps(images, ensure_ascii=False))
 		return []DockerImageItem{}, nil
 	}
 	return items, nil
+}
+
+type LocalWeightItem struct {
+	Name          string   `json:"name"`
+	Series        string   `json:"series"`
+	HostPath      string   `json:"host_path"`
+	ContainerPath string   `json:"container_path"`
+	SizeBytes     int64    `json:"size_bytes"`
+	SizeHuman     string   `json:"size_human"`
+	Format        string   `json:"format"`
+	FilesCount    int      `json:"files_count"`
+	SampleFiles   []string `json:"sample_files"`
+	Modified      string   `json:"modified"`
+	UsedBy        []string `json:"used_by"`
+	Status        string   `json:"status"` // CONFIGURED / READY / INCOMPLETE
+}
+
+func (m *ModelManager) GetHostLocalWeights() ([]LocalWeightItem, error) {
+	h, err := host.GetHostManager().GetCurrentHost()
+	if err != nil {
+		return nil, err
+	}
+
+	sh := `
+python3 -c '
+import os, sys, json, time, glob
+
+base_dirs = ["/mnt/model", "/home/workspace/models", "/home/workspace/model"]
+workspace = "/home/workspace"
+
+try:
+    with open(f"{workspace}/docker-compose-models.yml", "r") as f:
+        compose_text = f.read()
+except Exception:
+    compose_text = ""
+
+script_texts = {}
+for s in glob.glob(f"{workspace}/start_*.sh"):
+    try:
+        with open(s, "r") as f:
+            script_texts[os.path.basename(s)] = f.read()
+    except Exception:
+        pass
+
+def format_size(size):
+    for unit in ["B", "KB", "MB", "GB", "TB"]:
+        if size < 1024.0:
+            return f"{size:.1f} {unit}"
+        size /= 1024.0
+    return f"{size:.1f} PB"
+
+models = []
+seen_paths = set()
+
+def scan_model_dir(dir_path, depth=0, max_depth=3):
+    if depth > max_depth or not os.path.exists(dir_path):
+        return
+    try:
+        real_p = os.path.realpath(dir_path)
+        if real_p in seen_paths:
+            return
+        entries = os.listdir(dir_path)
+    except Exception:
+        return
+
+    safetensors = [f for f in entries if f.endswith(".safetensors")]
+    bins = [f for f in entries if f.endswith(".bin")]
+    ggufs = [f for f in entries if f.endswith(".gguf")]
+    has_config = "config.json" in entries
+
+    is_model = bool(safetensors or bins or ggufs or (has_config and len(entries) > 2))
+
+    if is_model:
+        seen_paths.add(real_p)
+        name = os.path.basename(dir_path)
+        series = "Other"
+        lower = dir_path.lower()
+        if "qwen" in lower: series = "Qwen"
+        elif "deepseek" in lower: series = "DeepSeek"
+        elif "glm" in lower: series = "GLM"
+        elif "minimax" in lower: series = "MiniMax"
+        elif "llama" in lower: series = "Llama"
+        elif "bge" in lower: series = "Embedding"
+
+        fmt = "Unknown"
+        if safetensors: fmt = "Safetensors"
+        elif bins: fmt = "PyTorch Bin"
+        elif ggufs: fmt = "GGUF"
+        elif has_config: fmt = "Config Only"
+
+        total_size = 0
+        weight_files = []
+        try:
+            for root, _, files in os.walk(dir_path):
+                for f in files:
+                    fp = os.path.join(root, f)
+                    try:
+                        total_size += os.path.getsize(fp)
+                    except Exception:
+                        pass
+                    if f.endswith((".safetensors", ".bin", ".gguf")):
+                        weight_files.append(f)
+        except Exception:
+            pass
+
+        container_path = dir_path.replace("/mnt/model", "/data/model")
+
+        used_by = []
+        base_name = os.path.basename(dir_path)
+        for sname, stext in script_texts.items():
+            if base_name in stext or dir_path in stext or container_path in stext:
+                used_by.append(sname)
+        if base_name in compose_text or dir_path in compose_text or container_path in compose_text:
+            used_by.append("docker-compose")
+        used_by = list(dict.fromkeys(used_by))
+
+        status = "READY"
+        if total_size < 100 * 1024 * 1024 and not weight_files:
+            status = "INCOMPLETE"
+        elif used_by:
+            status = "CONFIGURED"
+
+        mtime_str = ""
+        try:
+            mtime = os.path.getmtime(dir_path)
+            mtime_str = time.strftime("%Y-%m-%d %H:%M", time.localtime(mtime))
+        except Exception:
+            pass
+
+        models.append({
+            "name": name,
+            "series": series,
+            "host_path": dir_path,
+            "container_path": container_path,
+            "size_bytes": total_size,
+            "size_human": format_size(total_size),
+            "format": fmt,
+            "files_count": len(weight_files) if weight_files else len(entries),
+            "sample_files": weight_files[:3] if weight_files else entries[:3],
+            "modified": mtime_str,
+            "used_by": used_by,
+            "status": status
+        })
+        return
+
+    for e in sorted(entries):
+        sub = os.path.join(dir_path, e)
+        if os.path.isdir(sub):
+            scan_model_dir(sub, depth+1, max_depth)
+
+for b in base_dirs:
+    scan_model_dir(b)
+
+models.sort(key=lambda x: (x["series"], x["name"]))
+print(json.dumps(models, ensure_ascii=False))
+'
+`
+	res, err := runner.RunCmd(h.SSHAlias, sh, 20)
+	if err != nil {
+		return nil, err
+	}
+
+	var items []LocalWeightItem
+	if err := json.Unmarshal([]byte(res.Stdout), &items); err != nil {
+		return []LocalWeightItem{}, nil
+	}
+	return items, nil
+}
+
+func (m *ModelManager) DeleteModel(name, serviceName, containerName, script string) error {
+	h, err := host.GetHostManager().GetCurrentHost()
+	if err != nil {
+		return err
+	}
+
+	cleanSvc := strings.TrimSpace(serviceName)
+	cleanContainer := strings.TrimSpace(containerName)
+	cleanName := strings.TrimSpace(name)
+	cleanScript := strings.TrimSpace(script)
+
+	// 1. 远程容器强制清理与下线
+	var rmCmds []string
+	if cleanSvc != "" {
+		rmCmds = append(rmCmds, fmt.Sprintf("cd %s && docker compose -f docker-compose-models.yml rm -sf %s 2>/dev/null || true", h.Workspace, cleanSvc))
+	}
+	if cleanContainer != "" {
+		rmCmds = append(rmCmds, fmt.Sprintf("docker rm -f %s 2>/dev/null || true", cleanContainer))
+	}
+	if cleanSvc != "" && cleanSvc != cleanContainer {
+		rmCmds = append(rmCmds, fmt.Sprintf("docker rm -f %s 2>/dev/null || true", cleanSvc))
+	}
+	if len(rmCmds) > 0 {
+		_, _ = runner.RunCmd(h.SSHAlias, strings.Join(rmCmds, "; "), 20)
+	}
+
+	// 2. 从远程 docker-compose-models.yml 中精准移除对应的 service 块
+	cmd := fmt.Sprintf("cat %s/docker-compose-models.yml 2>/dev/null || echo 'NO_COMPOSE'", h.Workspace)
+	res, err := runner.RunCmd(h.SSHAlias, cmd, 10)
+	if err == nil && !strings.Contains(res.Stdout, "NO_COMPOSE") && strings.TrimSpace(res.Stdout) != "" {
+		newYaml, removed := removeComposeServiceSection(res.Stdout, cleanSvc, cleanContainer, cleanName)
+		if removed {
+			// 先备份
+			bakCmd := fmt.Sprintf("cp %s/docker-compose-models.yml %s/docker-compose-models.yml.bak 2>/dev/null || true", h.Workspace, h.Workspace)
+			_, _ = runner.RunCmd(h.SSHAlias, bakCmd, 5)
+
+			// 安全回写
+			b64 := base64.StdEncoding.EncodeToString([]byte(newYaml))
+			writeCmd := fmt.Sprintf("echo '%s' | base64 -d > %s/docker-compose-models.yml", b64, h.Workspace)
+			_, _ = runner.RunCmd(h.SSHAlias, writeCmd, 10)
+		}
+	}
+
+	// 3. 将对应启动脚本移至 scripts_archived 归档，保持工作区清爽且安全防误删
+	if cleanScript != "" && cleanScript != "start.sh" && cleanScript != "manage.sh" {
+		scriptBase := filepath.Base(cleanScript)
+		archiveDir := fmt.Sprintf("%s/scripts_archived", h.Workspace)
+		archiveCmd := fmt.Sprintf("mkdir -p %s && [ -f %s/%s ] && mv %s/%s %s/ 2>/dev/null || true",
+			archiveDir, h.Workspace, scriptBase, h.Workspace, scriptBase, archiveDir)
+		_, _ = runner.RunCmd(h.SSHAlias, archiveCmd, 5)
+	}
+
+	// 4. 从 hosts.yaml 中移除预设（如果在当前主机中存在）
+	cfg := config.GetConfig()
+	if cfg != nil {
+		modified := false
+		for i := range cfg.Hosts {
+			if cfg.Hosts[i].ID == h.ID || cfg.Hosts[i].SSHAlias == h.SSHAlias {
+				var newPresets []config.ModelPreset
+				for _, p := range cfg.Hosts[i].Models {
+					if (cleanName != "" && strings.EqualFold(p.Name, cleanName)) ||
+						(cleanSvc != "" && strings.EqualFold(p.ServiceName, cleanSvc)) ||
+						(cleanContainer != "" && strings.EqualFold(p.ContainerName, cleanContainer)) {
+						modified = true
+						continue
+					}
+					newPresets = append(newPresets, p)
+				}
+				if modified {
+					cfg.Hosts[i].Models = newPresets
+				}
+			}
+		}
+		if modified {
+			_ = config.SaveConfig(cfg, "")
+		}
+	}
+
+	return nil
+}
+
+func removeComposeServiceSection(fullYaml, serviceName, containerName, modelName string) (string, bool) {
+	lines := strings.Split(fullYaml, "\n")
+	svcRegex := regexp.MustCompile(`^[ ]{2}([a-zA-Z0-9_.-]+):[ ]*$`)
+	topRegex := regexp.MustCompile(`^[a-zA-Z0-9_.-]+:[ ]*$`)
+
+	type serviceBlock struct {
+		name         string
+		startIdx     int
+		commentStart int
+		endIdx       int
+	}
+
+	var blocks []*serviceBlock
+	var currentBlock *serviceBlock
+
+	for i := 0; i < len(lines); i++ {
+		line := lines[i]
+		if topRegex.MatchString(line) && !strings.HasPrefix(line, "  ") {
+			if currentBlock != nil {
+				currentBlock.endIdx = i
+				currentBlock = nil
+			}
+			continue
+		}
+
+		if m := svcRegex.FindStringSubmatch(line); len(m) > 1 {
+			if currentBlock != nil {
+				currentBlock.endIdx = i
+			}
+			sName := m[1]
+			cStart := i
+			for k := i - 1; k >= 0; k-- {
+				trimmed := strings.TrimSpace(lines[k])
+				if strings.HasPrefix(trimmed, "#") {
+					cStart = k
+				} else if trimmed == "" {
+					continue
+				} else {
+					break
+				}
+			}
+
+			currentBlock = &serviceBlock{
+				name:         sName,
+				startIdx:     i,
+				commentStart: cStart,
+				endIdx:       len(lines),
+			}
+			blocks = append(blocks, currentBlock)
+		}
+	}
+
+	var matchedBlock *serviceBlock
+	// 1. 精确匹配 serviceName
+	if serviceName != "" {
+		for _, b := range blocks {
+			if strings.EqualFold(b.name, serviceName) {
+				matchedBlock = b
+				break
+			}
+		}
+	}
+
+	// 2. 匹配 containerName
+	if matchedBlock == nil && containerName != "" {
+		for _, b := range blocks {
+			if strings.EqualFold(b.name, containerName) {
+				matchedBlock = b
+				break
+			}
+			blockContent := strings.Join(lines[b.startIdx:b.endIdx], "\n")
+			if strings.Contains(blockContent, fmt.Sprintf("container_name: %s", containerName)) {
+				matchedBlock = b
+				break
+			}
+		}
+	}
+
+	// 3. 匹配 modelName
+	if matchedBlock == nil && modelName != "" {
+		for _, b := range blocks {
+			blockContent := strings.Join(lines[b.startIdx:b.endIdx], "\n")
+			if strings.Contains(blockContent, fmt.Sprintf("container_name: %s", modelName)) {
+				matchedBlock = b
+				break
+			}
+			if strings.Contains(strings.ToLower(b.name), strings.ToLower(modelName)) {
+				matchedBlock = b
+				break
+			}
+		}
+	}
+
+	if matchedBlock == nil {
+		return fullYaml, false
+	}
+
+	// 移除 matchedBlock.commentStart 到 matchedBlock.endIdx 的行
+	newLines := make([]string, 0, len(lines))
+	newLines = append(newLines, lines[:matchedBlock.commentStart]...)
+	newLines = append(newLines, lines[matchedBlock.endIdx:]...)
+
+	return strings.Join(newLines, "\n"), true
 }

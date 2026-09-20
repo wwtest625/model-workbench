@@ -14,6 +14,7 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { StageTimeline } from './StageTimeline'
+import { copyToClipboard } from '../utils/clipboard'
 
 interface FullscreenLogViewProps {
   /** 容器名或模型名，用于 /api/v1/models/logs 查询 */
@@ -58,12 +59,21 @@ export const FullscreenLogView: React.FC<FullscreenLogViewProps> = ({ name, mode
 
   const [isStreaming, setIsStreaming] = useState(true)
   const [fetching, setFetching] = useState(false)
-  const [copied, setCopied] = useState(false)
   const [lineCount, setLineCount] = useState(0)
   const [countdown, setCountdown] = useState(2)
   const [lastUpdateTime, setLastUpdateTime] = useState('')
   const currentLogsRef = useRef('')
   const [logsText, setLogsText] = useState('')
+  const [copyToast, setCopyToast] = useState<string | null>(null)
+  const copyToastTimerRef = useRef<any>(null)
+
+  const showToast = useCallback((msg: string) => {
+    if (copyToastTimerRef.current) clearTimeout(copyToastTimerRef.current)
+    setCopyToast(msg)
+    copyToastTimerRef.current = setTimeout(() => {
+      setCopyToast(null)
+    }, 2500)
+  }, [])
 
   const writeLogsToTerminal = (term: Terminal, text: string) => {
     if (!text) return
@@ -120,6 +130,38 @@ export const FullscreenLogView: React.FC<FullscreenLogViewProps> = ({ name, mode
     xtermRef.current = term
     fitAddonRef.current = fitAddon
 
+    // 1. 快捷键支持：Ctrl+C / Cmd+C 复制选区，Ctrl+A 全选
+    term.attachCustomKeyEventHandler((arg: KeyboardEvent) => {
+      if ((arg.ctrlKey || arg.metaKey) && (arg.key === 'c' || arg.key === 'C')) {
+        if (term.hasSelection()) {
+          const selection = term.getSelection()
+          copyToClipboard(selection).then((ok) => {
+            if (ok) showToast(`已通过 Ctrl+C 复制选中文本 (${selection.length} 字符)`)
+          })
+          return false
+        }
+      }
+      if ((arg.ctrlKey || arg.metaKey) && (arg.key === 'a' || arg.key === 'A')) {
+        term.selectAll()
+        return false
+      }
+      return true
+    })
+
+    // 2. 划词即复制：鼠标在终端框选松开后，若有高亮选区，自动写入系统剪贴板并轻提示
+    const container = terminalRef.current
+    const handleMouseUp = () => {
+      if (term.hasSelection()) {
+        const selection = term.getSelection()
+        if (selection && selection.trim().length > 0) {
+          copyToClipboard(selection).then((ok) => {
+            if (ok) showToast(`已自动复制所选文本 (${selection.length} 字符)`)
+          })
+        }
+      }
+    }
+    container.addEventListener('mouseup', handleMouseUp)
+
     if (currentLogsRef.current) {
       writeLogsToTerminal(term, currentLogsRef.current)
     }
@@ -139,6 +181,7 @@ export const FullscreenLogView: React.FC<FullscreenLogViewProps> = ({ name, mode
     }
 
     return () => {
+      container.removeEventListener('mouseup', handleMouseUp)
       window.removeEventListener('resize', handleResize)
       clearTimeout(t)
       ro.disconnect()
@@ -146,7 +189,7 @@ export const FullscreenLogView: React.FC<FullscreenLogViewProps> = ({ name, mode
       xtermRef.current = null
       fitAddonRef.current = null
     }
-  }, [])
+  }, [showToast])
 
   // 首次加载
   useEffect(() => {
@@ -170,13 +213,6 @@ export const FullscreenLogView: React.FC<FullscreenLogViewProps> = ({ name, mode
     return () => clearInterval(interval)
   }, [isStreaming, fetchLogs])
 
-  const handleCopyLogs = () => {
-    if (!currentLogsRef.current) return
-    navigator.clipboard.writeText(currentLogsRef.current)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2500)
-  }
-
   const handleClear = () => {
     lastLogsRef.current = ''
     currentLogsRef.current = ''
@@ -197,8 +233,11 @@ export const FullscreenLogView: React.FC<FullscreenLogViewProps> = ({ name, mode
             <h1 className="text-sm font-semibold text-slate-100 flex items-center gap-2 truncate">
               容器实时日志 · <span className="text-indigo-300 font-mono">{name}</span>
             </h1>
-            <p className="text-[11px] text-slate-500 font-mono mt-0.5">
-              {lineCount} 行 · 最后更新 {lastUpdateTime || '--'} · 全屏独立标签页
+            <p className="text-[11px] text-slate-500 font-mono mt-0.5 flex items-center gap-2">
+              <span>{lineCount} 行 · 最后更新 {lastUpdateTime || '--'} · 全屏独立标签页</span>
+              <span className="hidden md:inline-block text-indigo-400/80 bg-indigo-950/40 px-1.5 py-0.5 rounded border border-indigo-800/40">
+                💡 划词即复制 / Ctrl+C 复制选区
+              </span>
             </p>
           </div>
         </div>
@@ -248,15 +287,6 @@ export const FullscreenLogView: React.FC<FullscreenLogViewProps> = ({ name, mode
             <Trash2 className="w-3.5 h-3.5" />
           </button>
 
-          {/* 复制全部 */}
-          <button
-            onClick={handleCopyLogs}
-            className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded border border-slate-700 transition cursor-pointer"
-            title="复制全部日志到剪贴板"
-          >
-            {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-          </button>
-
           {/* 回主界面 */}
           <a
             href="/"
@@ -284,6 +314,14 @@ export const FullscreenLogView: React.FC<FullscreenLogViewProps> = ({ name, mode
       <div className="flex-1 min-h-0 p-2 overflow-hidden relative bg-[#090d16]">
         <div ref={terminalRef} className="w-full h-full" />
       </div>
+
+      {/* 复制成功浮动轻提示 */}
+      {copyToast && (
+        <div className="fixed bottom-6 right-6 z-50 bg-slate-900/95 border border-emerald-500/60 text-emerald-300 px-4 py-2.5 rounded-xl shadow-2xl flex items-center gap-2 text-xs font-mono backdrop-blur animate-in fade-in slide-in-from-bottom-2">
+          <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span>{copyToast}</span>
+        </div>
+      )}
     </div>
   )
 }

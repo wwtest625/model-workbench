@@ -281,7 +281,7 @@ export const Playground: React.FC<PlaygroundProps> = ({ currentHostName = "146",
                 ) : (
                   readyModels.map((m) => (
                     <option key={`${m.name}-${m.port}`} value={m.name}>
-                      {m.name} · [:{m.port || targetPort}] ({m.engine}, TP={m.tp})
+                      {m.name} · [:{m.port || targetPort}] ({m.engine}, TP {m.tp})
                     </option>
                   ))
                 )}

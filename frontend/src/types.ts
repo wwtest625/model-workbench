@@ -38,6 +38,7 @@ export interface GPUInfo {
 export interface ModelCard {
   name: string
   engine: string
+  maca_version?: string
   tp: number
   port: number
   script: string
@@ -49,6 +50,13 @@ export interface ModelCard {
   pid?: string
   service_name?: string
   container_name?: string
+}
+
+export function getMacaVersion(m: { maca_version?: string; image?: string }): string {
+  if (m.maca_version) return m.maca_version
+  if (!m.image) return ''
+  const match = m.image.match(/(maca\.ai\d+(?:\.\d+)+|ai\d+(?:\.\d+)+)/i)
+  return match ? match[0] : ''
 }
 
 export interface LogFile {
@@ -144,3 +152,17 @@ export interface RepoImageGroup {
   images: DockerImageItem[]
 }
 
+export interface LocalWeightItem {
+  name: string
+  series: string
+  host_path: string
+  container_path: string
+  size_bytes: number
+  size_human: string
+  format: string
+  files_count: number
+  sample_files: string[]
+  modified: string
+  used_by: string[]
+  status: 'CONFIGURED' | 'READY' | 'INCOMPLETE'
+}

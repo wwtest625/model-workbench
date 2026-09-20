@@ -1,6 +1,6 @@
 import React from 'react'
-import { Play, FileCode, Container, CheckCircle2, AlertCircle } from 'lucide-react'
-import { ModelCard } from '../../types'
+import { Play, FileCode, Container, CheckCircle2, AlertCircle, Trash2 } from 'lucide-react'
+import { ModelCard, getMacaVersion } from '../../types'
 
 interface StoppedListProps {
   openLogs: (m: ModelCard) => void
@@ -8,12 +8,13 @@ interface StoppedListProps {
   openCompose: (m: ModelCard) => void
   operatingModel: boolean
   onStartModel: (model: ModelCard) => void
+  onDeleteModel?: (model: ModelCard) => void
   searchQuery: string
   filteredList: ModelCard[]
   statusTab: any
 }
 
-export const StoppedList: React.FC<StoppedListProps> = ({ openLogs, openScript, openCompose, operatingModel, onStartModel, searchQuery, filteredList, statusTab }) => {
+export const StoppedList: React.FC<StoppedListProps> = ({ openLogs, openScript, openCompose, operatingModel, onStartModel, onDeleteModel, searchQuery, filteredList, statusTab }) => {
   return (
 statusTab === 'STOPPED' && (
       <div className="space-y-4">
@@ -31,7 +32,9 @@ statusTab === 'STOPPED' && (
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredList.map((m) => (
+            {filteredList.map((m) => {
+              const macaVer = getMacaVersion(m)
+              return (
               <div
                 key={m.name}
                 className={`bg-slate-900/90 border rounded-xl p-4 flex flex-col justify-between gap-3 transition shadow-sm group ${
@@ -53,9 +56,9 @@ statusTab === 'STOPPED' && (
                         </span>
                       )}
                     </div>
-                    <div className="flex items-center gap-2 mt-1.5 text-xs text-slate-400 font-mono">
+                    <div className="flex items-center gap-2 mt-1.5 text-xs text-slate-400 font-mono flex-wrap">
                       <span
-                        className={`px-2 py-0.2 rounded font-medium ${
+                        className={`px-2 py-0.5 rounded font-medium ${
                           m.engine === 'vLLM'
                             ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
                             : 'bg-purple-500/10 text-purple-400 border border-purple-500/20'
@@ -63,26 +66,45 @@ statusTab === 'STOPPED' && (
                       >
                         {m.engine}
                       </span>
-                      <span>TP={m.tp} 卡</span>
+                      {macaVer && (
+                        <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 text-[11px] font-mono">
+                          {macaVer}
+                        </span>
+                      )}
                       <span>·</span>
-                      <span>Port {m.port}</span>
+                      <span>TP {m.tp}</span>
                     </div>
                   </div>
 
-                  {/* 右上紧凑启动小按钮 */}
-                  <button
-                    onClick={() => onStartModel(m)}
-                    disabled={operatingModel}
-                    className="shrink-0 py-1.5 px-3 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
-                    title="启动此模型容器服务"
-                  >
-                    <Play className="w-3 h-3 text-emerald-400 fill-emerald-400" />
-                    <span>{m.status === 'FAILED' ? '重试启动' : '启动'}</span>
-                  </button>
+                  {/* 右上紧凑操作小按钮组 */}
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {onDeleteModel && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onDeleteModel(m)
+                        }}
+                        disabled={operatingModel}
+                        className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-950/40 rounded-lg border border-slate-800 hover:border-rose-900/60 transition cursor-pointer disabled:opacity-50"
+                        title="删除此模型 (移除编排与容器)"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    <button
+                      onClick={() => onStartModel(m)}
+                      disabled={operatingModel}
+                      className="py-1.5 px-3 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50"
+                      title="启动此模型容器服务"
+                    >
+                      <Play className="w-3 h-3 text-emerald-400 fill-emerald-400" />
+                      <span>{m.status === 'FAILED' ? '重试启动' : '启动'}</span>
+                    </button>
+                  </div>
                 </div>
 
                 {/* 异常原因一览 (若有) */}
-                {m.status_detail && (
+                {m.status_detail && !m.status_detail.includes('编排就绪') && (
                   <div
                     onClick={() => openLogs(m)}
                     className="px-2.5 py-1.5 bg-rose-950/40 border border-rose-800/80 rounded-md text-[11px] font-mono text-rose-300 flex items-center justify-between gap-1 cursor-pointer hover:bg-rose-950/60 transition"
@@ -116,7 +138,7 @@ statusTab === 'STOPPED' && (
                   </button>
                 </div>
               </div>
-            ))}
+            )})}
           </div>
         )}
       </div>

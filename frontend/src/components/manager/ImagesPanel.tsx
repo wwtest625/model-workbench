@@ -13,7 +13,7 @@ interface ImagesPanelProps {
   filteredRepoGroups: { repository: string; tagsCount: number; images: DockerImageItem[] }[]
   expandedRepos: Record<string, boolean>
   copiedImageName: string | null
-  statusTab: 'RUNNING' | 'STOPPED' | 'IMAGES'
+  statusTab: 'RUNNING' | 'STOPPED' | 'IMAGES' | 'WEIGHTS'
   imageFilter: 'ALL' | 'VLLM' | 'SGLANG' | 'IN_USE' | 'ALIAS'
   setImageFilter: React.Dispatch<React.SetStateAction<'ALL' | 'VLLM' | 'SGLANG' | 'IN_USE' | 'ALIAS'>>
 }

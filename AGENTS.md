@@ -19,11 +19,14 @@ cat deploy.sh | xssh <alias> --stdin  # 管道喂命令
 xssh upload|up <alias> <local> <remote> [--resume]   # 上传（目录加 --recursive）
 xssh download|dl <alias> <remote> <local> [--resume] # 下载
 xssh tunnel|t <alias> local|remote|dynamic <spec>    # 端口转发
+xssh watch <alias> --name X --log P ...  # 服务启动看护（挂住到真就绪/失败，AI仅消费<2KB状态JSON）
+xssh watch status|wait|clean ...         # 看护状态查询/等待/清理
 xssh multi|m ...                      # 多连接分组管理
 xssh list                             # 服务器别名列表
 ```
 
 约定: 远程优先用 xssh 而非裸 ssh；长任务加 `--timeout`；大输出加 `--max-lines/--max-bytes`；连续多命令用 `xssh s`；批量多机用 `xssh m`。
+**服务监控铁律**：监控远程模型/服务启动时，**必须使用 `xssh watch` 挂住到终态**（ready/dead/failed），**严禁使用 sleep 循环轮询 tail 日志**（极度浪费 Token 且效率低下）。
 
 ## 大模型存储服务器
 
@@ -51,6 +54,49 @@ mx-smi --show-all-process # 所有 GPU 进程
 ```
 
 约定: 跑测试前先确认 GPU 空闲；压测用 `-l` 采样；关注 GPU-Util/HBM/显存/温度/功耗；结果记录模型名/精度/TP/batch/seq/throughput/TTFT/TPOT；对比只变一个变量。
+
+---
+
+## 模型服务与脚本规范（铁律）
+
+**启动脚本千万不能复用**：
+- **一对一强绑定**：每个模型服务必须拥有其**专属、独立**的启动脚本（如 `start_vllm_<模型名>.sh`、`start_sglang_<模型名>.sh`）。
+- **严禁跨模型共用**：不同模型、不同引擎框架（vLLM/SGLang）、不同量化版本，严禁复用同一个脚本文件。
+- **配置隔离防污染**：任何启动参数（TP、端口、显存比、环境变量）只在专属脚本内修改，坚决避免跨模型污染。
+- **删除与归档**：删除模型时，其专属脚本自动归档入 `scripts_archived/`，绝不牵扯其他模型的运行。
+
+### 146 算力节点（5330 G7 Ultra 双模组 16 卡）黄金配置标准
+- **双模组拓扑铁律**：该机型为双 GPU 模组，必须优先设置 `TP_SIZE=8, PP_SIZE=2`（模组内 8 卡全互联走 TP，跨模组走流水线并行 PP，消除跨 PCIe 瓶颈）。
+- **满血长文本**：`MAX_MODEL_LEN=262144`（统一放开至 256K）。
+- **批处理与显存保护**：`MAX_BATCHED_TOKENS=8192`，`GPU_MEM_UTIL=0.9`（预留 10% 防碎片 OOM）。
+- **工具调用与思维链**：默认开启 `--enable-auto-tool-choice`，显式指定对应 `--tool-call-parser` 与 `--reasoning-parser`。
+- **块尺寸与并发预读**：`--block-size 128`，`--model-loader-extra-config '{"enable_multithread_load":true,"num_threads":4}'`。
+- **本地黄金模板**：`/root/metax-workbench/template_vllm_5330_g7_tp8pp2.sh`。
+
+---
+
+## mn — 集群模型库管理 CLI
+
+位置: `/home/mn/`（源码） → `/root/.local/bin/mn`（二进制，Zig 3.2MB）
+
+统一管理存储节点上的模型。**76/29 这类存储节点不在 `hosts.yaml` 里**（该文件只登记算力节点），故 mn 自建节点配置，与 `backend/internal/hub/hub.go` 的硬编码路径保持一致。
+
+```bash
+mn scan [节点]              # 扫描远端刷新缓存（唯一触网命令；单节点扫描为增量合并）
+mn stat                     # 总览：模型数/总体积/按节点/按量化
+mn list [-s size|time|name|node|quant] [-r] [-n 节点] [-q 量化] [-l N] [--json]
+mn find <关键词>            # 模糊搜索，按体积降序
+mn info <关键词>            # 模型详情
+```
+
+**核心约定**：
+- 除 `mn scan` 外全部命令**只读本地缓存**（`~/.cache/mn/models.tsv`），秒回，不依赖远端。
+- 扫描判定规则**对齐 `hub.go` 的 `scanServerDeepByConfigJson()`**：以 `**/config.json` 为锚点，跳过 `vae`/`tokenizer` 等组件目录，要求有 `model_type`/`architectures`，**且必须有权重文件**（否则游离的 config.json 会被误判——29 仓库根目录就曾因此被算成一个 64.6T 的假模型）。
+- **不能假设"顶层目录 = 一个模型"**：`DeepSeek_V4/`、`hygon/`、`KUNLUNXIN/` 是分类目录，真实模型在二级甚至四级。
+- 跨机执行复用 `xssh`，但隔离在 `src/remote.zig`（含 JSON 解包），未来可整体替换为 libssh2。
+
+**重复模型排查**：`python3 /home/mn/scripts/mn_dupes.py`（只读分析，不做删除）。
+首次运行发现 26 组重复，保守估计可回收 **8.8T**（占总量 13.1%），主要为跨机拷贝未清理与 modelscope 下载产生的重复目录。
 
 ---
 
@@ -96,11 +142,15 @@ timeout 120 /root/.local/bin/agy -p "分析内存泄漏"
 ### CLI 命令 (`/root/.local/bin/lane`)
 
 ```bash
-lane                      # 查看所有 Agent 最新会话列表
+lane                      # ⚡ 极速查看所有 Agent 最新会话列表（Zig 引擎加速，~2ms）
 lane <session_id> -s      # 摘要模式查看
-lane -a qoder -s          # 仅筛选 qoder 会话
+lane view <会话ID> --full # 对话流全文（截断时必带「已截断：全文 N 字」标记）
+lane msg <会话ID> <序号>  # ⭐ 取单条消息全文（默认按 step_index 匹配，--line 按物理行号）
+lane -a qoder             # 仅筛选 qoder 会话
+lane -a codebuddy         # 仅看 codebuddy 会话
 lane -a agy               # 仅筛选 agy 会话
-lane -g "关键词"           # 全局跨 Agent 搜索
+lane -g "关键词"           # ⚡ 全局跨 Agent 极速搜索（跨 32KB 滑动无漏检，~8ms）
+lane-fast                 # 直接调用 Zig 原生静态可执行文件
 lane <session_id> -T      # 跳过思考流
 lane rename <ID> "新标题"
 lane tag <ID> add "标签"
@@ -123,28 +173,23 @@ lane agy "继续排查内存泄漏问题"
 lane panel [--port 3457]     # 启动可视化控制台
 ```
 
----
+### LANE_CARD 里程碑卡片规范 (P3a 日记本基建)
 
-## Funes 记忆与跨 Agent 经验召回
+各 Agent 在交互中**每完成一个明确的 Milestone / 交付成果时，顺手在回复末尾附带标准卡片**（绝不强制每轮输出，避免过度开销）：
 
-位置: `/root/.local/bin/funes`（本地 LanceDB 向量库: `/root/.funes/memory`）
-
-已全量索引本机各 Agent（CodeBuddy、agy、codex）的历史会话切片（4400+ Chunks）。**在遇到以下场景时，各 Agent 均应在行动前主动执行 `funes recall` 查询前人决策与既有方案**：
-1. **环境与算力机配置**：如 146、76、55 服务器配置、vLLM/SGLang 启动参数、显存分配与端口；
-2. **工具与脚本用法**：如 `xssh` 参数细节、`manage.sh`、数据分发、WSL 避坑等；
-3. **接力与复用**：接手此前其他兄弟 Agent 做过的任务、代码审查或排查过的 Bug。
-
-### 常用指令
-
-```bash
-funes recall "<关键词/问题描述>" -k 3 --candidates 5   # 语义检索历史决策与代码（含来源/轮次/打分）
-funes get <session_id> --from <N> --to <M>             # 毫秒级查看命中会话的上下文片段
-funes status                                          # 查看当前本地记忆库统计
+```html
+<!-- LANE_CARD: {action: "实现了某个具体功能/清理了数据", conclusion: "测试通过/释放24G/已覆盖上线", status: "done", entities: ["146", "76", "zig", "vllm"]} -->
 ```
+> ⚠️ **防误收约定**：文档与示例中请保持键名不带引号等非合法 JSON 占位形态，切勿出现合法 JSON 形态的 LANE_CARD 示例，避免被收割器误收入库。
 
-> **约定**：排查问题或修改关键配置前，优先通过 `funes recall` 吸收前人经验，避免重复排错与配置回退。
+- `action`：动宾短语，概括本次干了啥（精简 40 字以内）；
+- `conclusion`：明确结果与产出；
+- `status`：`done`（完成） / `ongoing`（进行中） / `aborted`（中断/报错）；
+- `entities`：涉及的核心实体列表（如 146、76、zig、vllm、Qwen 等）；
+- `lane` 在调用时会自动进行毫秒级增量收割，落库至 `/root/.agent/lane-summary.db`，并在 `lane` 列表中显示 STAT+SUMMARY，在 `lane view <ID>` 中展示完整历史时间线。
 
 ---
+
 
 ## 联网搜索三件套
 
@@ -211,7 +256,7 @@ curl -s "http://localhost:3456/screenshot?target=ID&file=/tmp/shot.png"
 - **配置目录**: `/root/.reasonix/`
 - **会话存储**: `/root/.reasonix/projects/-root-metax-workbench/sessions/`
 - **默认模型**: `agnes-2.5-flash` (custom-apihub)
-- **备用模型**: `Qwen3.8-27B` (local-vllm @ 192.2.0.146:8000)
+- **本地/备用模型**: `DeepSeek-V4` (local-vllm @ 192.2.0.146:8000, 16卡 256K)
 - **权限模式**: `ask`（敏感操作需确认）
 - **工作区沙盒**: `/root/metax-workbench`
 

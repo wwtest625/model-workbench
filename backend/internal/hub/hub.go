@@ -533,12 +533,13 @@ func (h *HubManager) GetRsyncTasks() ([]RsyncTask, error) {
 		go func(serverIP string) {
 			defer wg.Done()
 			sh := fmt.Sprintf(`python3 -c '
-import os, json, subprocess, re
+import os, json, subprocess, re, time
 
 tasks = []
 server_ip = "%s"
 try:
     ps_out = subprocess.check_output(["ps", "-eo", "pid,args"], text=True)
+    active_models = set()
     for line in ps_out.strip().split("\n"):
         if "rsync -avP" in line and "grep" not in line:
             parts = line.strip().split(None, 1)
@@ -560,6 +561,7 @@ try:
                 target_path = t_parts[1]
             
             model_name = os.path.basename(src_path.rstrip("/"))
+            active_models.add(model_name)
             
             # 读取源端分片数量与总大小
             src_shard_count = 0
@@ -586,7 +588,6 @@ try:
                     with open(log_file, "r", encoding="utf-8", errors="ignore") as f:
                         text = f.read()
                     
-                    # 展开 \r 与 \n，取最近 120 行
                     lines = [l.strip() for l in re.split(r"[\r\n]+", text) if l.strip()]
                     if lines:
                         clean_last = re.sub(r"\x1b\[[0-9;]*[a-zA-Z]", "", lines[-1]).strip()
@@ -597,7 +598,6 @@ try:
                         file_pct = 0
                         
                         for l in lines[-120:]:
-                            # 1. 匹配标准大模型权重分片如: model-00015-of-00062.safetensors / pytorch_model-001-of-008.bin
                             m_name = re.search(r"(?:model|pytorch_model|consolidated|checkpoint|\w+)[-_.](\d+)-of-(\d+)\.(?:safetensors|bin|pt|safete|\w+)", l, re.IGNORECASE)
                             if not m_name:
                                 m_name = re.search(r"(\d+)-of-(\d+)", l)
@@ -606,14 +606,12 @@ try:
                                 cur_shard = int(m_name.group(1))
                                 total_shards = int(m_name.group(2))
                             
-                            # 2. 匹配当前切片的传输百分比与速率、ETA
                             m_pct = re.search(r"(\d+)%%\s+([\d\.]+[KMG]?B/s)\s+([\d:]+)", l)
                             if m_pct:
                                 file_pct = int(m_pct.group(1))
                                 speed = m_pct.group(2)
                                 eta = m_pct.group(3)
                         
-                        # 3. 稳健平滑的全局百分比算法 (绝对单调递增，不乱跳)
                         if total_shards > 0 and cur_shard > 0:
                             smooth_pct = ((cur_shard - 1) + (file_pct / 100.0)) / total_shards * 100.0
                             progress = min(99, max(1, int(smooth_pct)))
@@ -642,6 +640,77 @@ try:
                 "last_log": last_log,
                 "status": "SYNCING"
             })
+
+    # 检查最近 1 小时内生成或修改的 /tmp/rsync_*.log (识别闪电完成或已同步的任务)
+    now = time.time()
+    for fname in os.listdir("/tmp"):
+        if fname.startswith("rsync_") and fname.endswith(".log"):
+            mname = fname[len("rsync_"):-len(".log")]
+            if mname in active_models:
+                continue
+            log_path = os.path.join("/tmp", fname)
+            try:
+                mtime = os.path.getmtime(log_path)
+                if now - mtime > 3600:
+                    continue
+                with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
+                    content = f.read()
+                lines = [l.strip() for l in re.split(r"[\r\n]+", content) if l.strip()]
+                if not lines:
+                    continue
+                last_line = lines[-1]
+                clean_last = re.sub(r"\x1b\[[0-9;]*[a-zA-Z]", "", last_line).strip()
+                
+                # 获取源端路径与大小
+                src_path = ""
+                total_size = ""
+                for candidate in [f"/data/AI_model/{mname}", f"/HDD_Raid/SVN_MODEL_REPO/Model/{mname}"]:
+                    if os.path.exists(candidate):
+                        src_path = candidate
+                        try:
+                            total_size = subprocess.check_output(["du", "-sh", candidate], text=True).split()[0]
+                        except Exception:
+                            pass
+                        break
+                
+                if "total size is" in content and "speedup is" in content:
+                    is_already_synced = ("(xfr#" not in content or "xfr#0" in content)
+                    status = "ALREADY_SYNCED" if is_already_synced else "COMPLETED"
+                    transferred_desc = "两端文件完全一致 (已就绪 100%%)" if is_already_synced else "分发完成 100%%"
+                    
+                    tasks.append({
+                        "pid": f"done-{mname}",
+                        "model_name": mname,
+                        "source_server": server_ip,
+                        "source_path": src_path,
+                        "target_server": "192.2.0.146",
+                        "target_path": f"/data/model/{mname}",
+                        "progress": 100,
+                        "speed": "已结束",
+                        "eta": "00:00",
+                        "transferred": transferred_desc,
+                        "total_size": total_size,
+                        "last_log": clean_last[-140:],
+                        "status": status
+                    })
+                elif "rsync error:" in content or "error" in content.lower():
+                    tasks.append({
+                        "pid": f"err-{mname}",
+                        "model_name": mname,
+                        "source_server": server_ip,
+                        "source_path": src_path,
+                        "target_server": "192.2.0.146",
+                        "target_path": f"/data/model/{mname}",
+                        "progress": 0,
+                        "speed": "异常",
+                        "eta": "--",
+                        "transferred": "分发异常中断",
+                        "total_size": total_size,
+                        "last_log": clean_last[-140:],
+                        "status": "FAILED"
+                    })
+            except Exception:
+                pass
 except Exception as e:
     pass
 

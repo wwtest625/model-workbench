@@ -7,7 +7,7 @@ set -e
 MODEL_PATH="/data/model/model/DeepSeek/DeepSeek-V4-Flash-0731-W8A8"
 TP_SIZE=8
 PORT=8000
-MAX_MODEL_LEN=256
+MAX_MODEL_LEN=262144
 LOG_FILE="/home/models_log/vllm/deepseek-v4-0731-w8a8-105.log"
 ulimit -n 65536
 mkdir -p "$(dirname "$LOG_FILE")"
@@ -17,7 +17,6 @@ export PATH="/opt/conda/bin:$PATH"
 ln -sf /opt/conda/bin/ninja /usr/local/bin/ninja 2>/dev/null || true
 
 # GPU 0-7 拓扑环序: 前8卡 (tp8)
-export CUDA_VISIBLE_DEVICES=0,1,2,3,6,5,4,7
 export MACA_SMALL_PAGESIZE_ENABLE=1
 export MACA_DIRECT_DISPATCH=1
 # DSpark W8A8 关键开关 (105 引擎 vllm_metax 支持)
@@ -39,5 +38,6 @@ exec /opt/conda/bin/vllm serve "$MODEL_PATH" \
   --max-num-batched-tokens 8192 \
   --distributed-executor-backend mp \
   -tp "$TP_SIZE" \
+  -dp 2 \
   --port "$PORT" \
   2>&1 | tee -a "$LOG_FILE"

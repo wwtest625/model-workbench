@@ -26,8 +26,13 @@ ENV/
 *.sqlite
 *.db
 *.bak
+data/
 
-# OS / Editor files
+# OS / Editor / Agent files
 .DS_Store
 .vscode/
 .idea/
+.codebuddy/
+.remote-fix/
+scratch/
+cup_puzzle/

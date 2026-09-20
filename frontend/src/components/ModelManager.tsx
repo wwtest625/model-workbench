@@ -22,14 +22,16 @@ import {
   Disc,
   Tag,
   Check,
-  HardDrive
+  HardDrive,
+  Database
 } from 'lucide-react'
-import { ModelCard, ModalState, DockerImageItem } from '../types'
+import { ModelCard, ModalState, DockerImageItem, LocalWeightItem } from '../types'
 import { CodeEditor } from './CodeEditor'
 import { parseImageTraits } from './manager/traits'
 import { RunningList } from './manager/RunningList'
 import { StoppedList } from './manager/StoppedList'
 import { ImagesPanel } from './manager/ImagesPanel'
+import { LocalWeightsPanel } from './manager/LocalWeightsPanel'
 import { ScriptModal } from './manager/ScriptModal'
 
 interface ModelManagerProps {
@@ -38,6 +40,7 @@ interface ModelManagerProps {
   onStartModel: (model: ModelCard) => void
   onRestartModel?: (model: ModelCard) => void
   onStopModel: (model: ModelCard) => void
+  onDeleteModel?: (model: ModelCard) => void
   onStopAll: () => void
   showToast?: (msg: string, type: 'success' | 'error' | 'info') => void
 }
@@ -48,6 +51,7 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
   onStartModel,
   onRestartModel,
   onStopModel,
+  onDeleteModel,
   onStopAll,
   showToast
 }) => {
@@ -69,7 +73,7 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
   const loadingCount = models.filter((m) => m.status === 'WARMING_UP' || m.status === 'LOADING_WEIGHTS' || m.status === 'INIT' || m.status === 'LOADING').length
   const failedCount = models.filter((m) => m.status === 'FAILED').length
 
-  const [statusTab, setStatusTab] = useState<'RUNNING' | 'STOPPED' | 'IMAGES'>('RUNNING')
+  const [statusTab, setStatusTab] = useState<'RUNNING' | 'STOPPED' | 'IMAGES' | 'WEIGHTS'>('RUNNING')
   const [searchQuery, setSearchQuery] = useState('')
   const [expandedModels, setExpandedModels] = useState<Record<string, boolean>>({})
 
@@ -92,10 +96,31 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
     }
   }
 
+  // 本地模型权重状态
+  const [weights, setWeights] = useState<LocalWeightItem[]>([])
+  const [loadingWeights, setLoadingWeights] = useState<boolean>(false)
+
+  const fetchHostWeights = async () => {
+    setLoadingWeights(true)
+    try {
+      const res = await fetch('/api/v1/models/weights')
+      const data = await res.json()
+      setWeights(data.weights || [])
+    } catch (e: any) {
+      if (showToast) showToast('获取本地模型列表失败: ' + e.message, 'error')
+    } finally {
+      setLoadingWeights(false)
+    }
+  }
+
   useEffect(() => {
     // 首次载入或切换至 IMAGES 时自动拉取镜像
     if (statusTab === 'IMAGES' && images.length === 0) {
       fetchHostImages()
+    }
+    // 切换至 WEIGHTS 时自动拉取模型权重
+    if (statusTab === 'WEIGHTS' && weights.length === 0) {
+      fetchHostWeights()
     }
   }, [statusTab])
 
@@ -332,6 +357,21 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
               本地镜像 ({images.length > 0 ? images.length : '镜像'})
             </span>
           </button>
+
+          {/* 本地模型 (模型权重资产) - 紧随本地镜像边上 */}
+          <button
+            onClick={() => setStatusTab('WEIGHTS')}
+            className={`px-4 py-2 rounded-lg flex items-center gap-2 transition cursor-pointer ${
+              statusTab === 'WEIGHTS'
+                ? 'bg-purple-600/20 text-purple-300 border border-purple-500/40 shadow-sm font-semibold'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+            }`}
+          >
+            <Database className="w-3.5 h-3.5 text-slate-400" />
+            <span>
+              本地模型 ({weights.length > 0 ? weights.length : '模型'})
+            </span>
+          </button>
         </div>
 
         {/* 右侧搜索与全局停止/刷新按钮 */}
@@ -343,6 +383,8 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
               placeholder={
                 statusTab === 'IMAGES'
                   ? '搜索 Repo / Tag / ID...'
+                  : statusTab === 'WEIGHTS'
+                  ? '搜索模型全名 / 路径 / 系列 / 格式...'
                   : `在 ${statusTab === 'RUNNING' ? '运行中' : '未启动'} 中搜索...`
               }
               value={searchQuery}
@@ -360,6 +402,16 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
             >
               <RotateCw className={`w-3.5 h-3.5 ${loadingImages ? 'animate-spin' : ''}`} />
               <span>刷新镜像</span>
+            </button>
+          ) : statusTab === 'WEIGHTS' ? (
+            <button
+              onClick={fetchHostWeights}
+              disabled={loadingWeights}
+              className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-purple-300 border border-slate-700 rounded-lg text-xs transition flex items-center gap-1.5 font-medium cursor-pointer shrink-0"
+              title="重新扫描当前主机上的本地大模型权重目录"
+            >
+              <RotateCw className={`w-3.5 h-3.5 ${loadingWeights ? 'animate-spin' : ''}`} />
+              <span>刷新模型</span>
             </button>
           ) : (
             <button
@@ -388,6 +440,7 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
         operatingModel={operatingModel}
         onRestartModel={onRestartModel}
         onStopModel={onStopModel}
+        onDeleteModel={onDeleteModel}
         openLogs={openLogs}
         openScript={openScript}
         openCompose={openCompose}
@@ -402,6 +455,7 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
         searchQuery={searchQuery}
         operatingModel={operatingModel}
         onStartModel={onStartModel}
+        onDeleteModel={onDeleteModel}
         openLogs={openLogs}
         openScript={openScript}
         openCompose={openCompose}
@@ -423,6 +477,18 @@ export const ModelManager: React.FC<ModelManagerProps> = ({
         imageCounts={imageCounts}
         toggleExpandRepo={toggleExpandRepo}
         handleCopyImage={handleCopyImage}
+      />
+
+      {/* ========================================================================= */}
+      {/* 4. 本地模型模式 (WEIGHTS - 算力机本地模型权重资产列表) */}
+      {/* ========================================================================= */}
+      <LocalWeightsPanel
+        weights={weights}
+        loading={loadingWeights}
+        searchQuery={searchQuery}
+        statusTab={statusTab}
+        onRefresh={fetchHostWeights}
+        showToast={showToast}
       />
 
       {/* 弹窗：启动脚本代码编辑器 (Monaco Editor) 与 Compose 片段查看器 */}

@@ -19,6 +19,7 @@ import (
 	"metax-workbench/internal/host"
 	"metax-workbench/internal/hub"
 	"metax-workbench/internal/model"
+	"metax-workbench/internal/transfer"
 )
 
 func SetupRouter() *gin.Engine {
@@ -70,12 +71,14 @@ func SetupRouter() *gin.Engine {
 		v1.POST("/models/start", startModel)
 		v1.POST("/models/restart", restartModel)
 		v1.POST("/models/stop", stopSingleModel)
+		v1.POST("/models/delete", deleteModel)
 		v1.POST("/models/stop-all", stopAllModels)
 		v1.GET("/models/script", getModelScript)
 		v1.POST("/models/script", saveModelScript)
 		v1.GET("/models/command", getModelCommand)
 		v1.GET("/models/logs", getModelLogs)
 		v1.GET("/models/images", getHostImages)
+		v1.GET("/models/weights", getHostWeights)
 
 		// 性能压测与通信
 		v1.GET("/benchmark/logs", getBenchmarkLogs)
@@ -95,6 +98,16 @@ func SetupRouter() *gin.Engine {
 		v1.POST("/hub/start-rsync", startHubRsync)
 		v1.GET("/hub/rsync-tasks", getHubRsyncTasks)
 		v1.GET("/hub/rsync-log", getHubRsyncLog)
+
+		// 工业级大模型分发与生命周期管理中心 (带空间预检与权重质检)
+		v1.POST("/transfer/preflight", preflightTransfer)
+		v1.POST("/transfer/start", startTransfer)
+		v1.POST("/transfer/resume", resumeTransfer)
+		v1.POST("/transfer/stop", stopTransfer)
+		v1.POST("/transfer/verify", verifyTransfer)
+		v1.GET("/transfer/tasks", listTransferTasks)
+		v1.DELETE("/transfer/tasks/:id", deleteTransferTask)
+		v1.GET("/transfer/log", getTransferLog)
 	}
 
 	return r
@@ -265,6 +278,26 @@ func restartModel(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("容器 %s 已成功重启", target)})
+}
+
+type DeleteModelReq struct {
+	Name          string `json:"name"`
+	ServiceName   string `json:"service_name"`
+	ContainerName string `json:"container_name"`
+	Script        string `json:"script"`
+}
+
+func deleteModel(c *gin.Context) {
+	var req DeleteModelReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := model.GetModelManager().DeleteModel(req.Name, req.ServiceName, req.ContainerName, req.Script); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("已成功删除模型 %s 并清理相关配置", req.Name)})
 }
 
 func stopAllModels(c *gin.Context) {
@@ -627,6 +660,15 @@ func getHostImages(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"images": images})
 }
 
+func getHostWeights(c *gin.Context) {
+	weights, err := model.GetModelManager().GetHostLocalWeights()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"weights": weights})
+}
+
 
 func getHubLocalAssets(c *gin.Context) {
 	force := c.Query("force") == "true"
@@ -741,5 +783,139 @@ func getHubRsyncLog(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"name": name, "logs": logs})
 }
+
+// ==================== Transfer Lifecycle Management Handlers ====================
+
+type PreflightReq struct {
+	SourceServer string `json:"source_server"`
+	SourcePath   string `json:"source_path" binding:"required"`
+	TargetServer string `json:"target_server"`
+	TargetPath   string `json:"target_path" binding:"required"`
+}
+
+func preflightTransfer(c *gin.Context) {
+	var req PreflightReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	res, err := transfer.GetTransferManager().PreflightCheck(req.SourceServer, req.SourcePath, req.TargetServer, req.TargetPath)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, res)
+}
+
+type StartTransferReq struct {
+	ModelName    string `json:"model_name"`
+	SourceServer string `json:"source_server"`
+	SourcePath   string `json:"source_path" binding:"required"`
+	TargetServer string `json:"target_server"`
+	TargetPath   string `json:"target_path"`
+}
+
+func startTransfer(c *gin.Context) {
+	var req StartTransferReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	task, err := transfer.GetTransferManager().StartTask(req.SourceServer, req.SourcePath, req.TargetServer, req.TargetPath, req.ModelName)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, task)
+}
+
+type TaskActionReq struct {
+	TaskID string `json:"task_id" binding:"required"`
+}
+
+func resumeTransfer(c *gin.Context) {
+	var req TaskActionReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	task, err := transfer.GetTransferManager().ResumeTask(req.TaskID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "已成功启动断点续传", "task": task})
+}
+
+func stopTransfer(c *gin.Context) {
+	var req TaskActionReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := transfer.GetTransferManager().StopTask(req.TaskID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "任务已暂停并保留断点"})
+}
+
+func verifyTransfer(c *gin.Context) {
+	var req TaskActionReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	report, err := transfer.GetTransferManager().VerifyTask(req.TaskID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, report)
+}
+
+func listTransferTasks(c *gin.Context) {
+	tasks, err := transfer.GetTransferManager().ListTasks()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"tasks": tasks})
+}
+
+func deleteTransferTask(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少任务 ID"})
+		return
+	}
+
+	if err := transfer.GetTransferManager().DeleteTask(id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "任务记录已删除"})
+}
+
+func getTransferLog(c *gin.Context) {
+	taskID := c.Query("task_id")
+	if taskID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少 task_id 参数"})
+		return
+	}
+
+	logs, err := transfer.GetTransferManager().GetTaskLog(taskID, 120)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"task_id": taskID, "logs": logs})
+}
+
 
 
