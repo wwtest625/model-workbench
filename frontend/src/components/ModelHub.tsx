@@ -22,7 +22,7 @@ import {
   Sparkles
 } from 'lucide-react'
 import { DownloadTask, RsyncTask } from '../types'
-import { LocalAsset, AggregatedModelAsset, HubModelItem, DistributeModalState, LogModalState, RsyncLogModalState } from './hub/types'
+import { LocalAsset, AggregatedModelAsset, HubModelItem, DistributeItem, DistributeModalState, LogModalState, RsyncLogModalState } from './hub/types'
 import { normalizeStrict, getQuantTag } from './hub/utils'
 import { TaskBoardPanel } from './hub/TaskBoardPanel'
 import { SearchResultsList } from './hub/SearchResultsList'
@@ -30,6 +30,7 @@ import { LocalAssetsList } from './hub/LocalAssetsList'
 import { DistributeModal } from './hub/DistributeModal'
 import { RsyncLogModal } from './hub/RsyncLogModal'
 import { LogModal } from './hub/LogModal'
+import { copyToClipboard } from '../utils/clipboard'
 
 interface ModelHubProps {
   openConfirm?: (opts: any) => void
@@ -134,10 +135,11 @@ export const ModelHub: React.FC<ModelHubProps> = ({ openConfirm, showToast }) =>
       const tasks: RsyncTask[] = data.tasks || []
       setRsyncTasks(tasks)
 
-      if (prevRsyncCountRef.current > 0 && tasks.length === 0) {
-        if (showToast) showToast('模型分发传输已完成！目标算力机已就绪', 'success')
+      const activeSyncing = tasks.filter((t) => t.status === 'SYNCING')
+      if (prevRsyncCountRef.current > 0 && activeSyncing.length === 0) {
+        fetchLocalAssets(true)
       }
-      prevRsyncCountRef.current = tasks.length
+      prevRsyncCountRef.current = activeSyncing.length
 
       // 缓存失效感知: 分发任务消失(完成)后强刷本地资产缓存，新落盘模型立即可见
       const currentNames = new Set(tasks.map((t) => t.model_name))
@@ -210,15 +212,30 @@ export const ModelHub: React.FC<ModelHubProps> = ({ openConfirm, showToast }) =>
     }
   }
 
-  const openDistributeModal = (item: { name: string; path?: string; server?: string; server_ip?: string }) => {
-    const defaultSourceServer = item.server_ip || '192.2.56.76'
-    const defaultSourcePath = item.path || `/data/AI_model/${item.name}`
+  const openDistributeModal = (item: DistributeItem) => {
+    const defaultSourceServer =
+      item.server_ip ||
+      item.local_meta?.server_ip ||
+      (item.local_status === 'LOCAL_TEST03' || item.server === 'test03' || item.server === '29'
+        ? '192.2.29.9'
+        : '192.2.56.76')
+
+    const cleanName = item.name.split('/').pop() || item.name
+
+    const defaultSourcePath =
+      item.path ||
+      item.local_path ||
+      item.local_meta?.path ||
+      (defaultSourceServer === '192.2.29.9'
+        ? `/HDD_Raid/SVN_MODEL_REPO/Model/${cleanName}`
+        : `/data/AI_model/${cleanName}`)
+
     const defaultTargetServer = '192.2.0.146'
-    const defaultTargetPath = `/data/model/${item.name}`
+    const defaultTargetPath = `/data/model/${cleanName}`
 
     setDistributeModal({
       open: true,
-      name: item.name,
+      name: cleanName,
       sourceServer: defaultSourceServer,
       sourcePath: defaultSourcePath,
       targetServer: defaultTargetServer,
@@ -230,10 +247,11 @@ export const ModelHub: React.FC<ModelHubProps> = ({ openConfirm, showToast }) =>
     if (!distributeModal) return
     const { name, sourceServer, sourcePath, targetServer, targetPath } = distributeModal
     setDistributeModal(null)
-    if (showToast) showToast(`正在向 76 下发分发指令: ${name} ➡️ ${targetServer}...`, 'info')
+    const serverLabel = sourceServer === '192.2.29.9' ? '29 (test03)' : (sourceServer === '192.2.56.76' ? '76 (主力存储)' : sourceServer)
+    if (showToast) showToast(`正在向 ${serverLabel} 下发分发指令: ${name} ➡️ ${targetServer}...`, 'info')
 
     try {
-      await fetch('/api/v1/hub/start-rsync', {
+      const res = await fetch('/api/v1/transfer/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -244,8 +262,12 @@ export const ModelHub: React.FC<ModelHubProps> = ({ openConfirm, showToast }) =>
           target_path: targetPath
         })
       })
-      if (showToast) showToast(`分发任务已在后台启动！目标: ${targetServer}`, 'success')
-      fetchRsyncTasks()
+      const data = await res.json()
+      if (!res.ok) {
+        throw new Error(data.error || '分发任务启动受阻')
+      }
+      if (showToast) showToast(`分发任务已纳入生命周期管理！后台正在安全传输并校验...`, 'success')
+      setTimeout(() => fetchRsyncTasks(), 400)
     } catch (e: any) {
       if (showToast) showToast('分发启动失败: ' + e.message, 'error')
     }
@@ -306,11 +328,13 @@ export const ModelHub: React.FC<ModelHubProps> = ({ openConfirm, showToast }) =>
     }
   }
 
-  const handleCopy = (text: string, id: string) => {
-    navigator.clipboard.writeText(text)
-    setCopiedId(id)
-    if (showToast) showToast('已复制命令到剪贴板', 'success')
-    setTimeout(() => setCopiedId(null), 2500)
+  const handleCopy = async (text: string, id: string) => {
+    const ok = await copyToClipboard(text)
+    if (ok) {
+      setCopiedId(id)
+      if (showToast) showToast('已复制到剪贴板', 'success')
+      setTimeout(() => setCopiedId(null), 2500)
+    }
   }
 
   const handleStartDownload = (item: HubModelItem) => {

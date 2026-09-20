@@ -1,6 +1,6 @@
 import React from 'react'
 import { Download, Copy, Check, RotateCw, Terminal, Activity, Send } from 'lucide-react'
-import { RsyncTask, DownloadTask, HubModelItem } from './types'
+import { RsyncTask, DownloadTask, HubModelItem, DistributeItem } from './types'
 import { normalizeStrict, getQuantTag, formatSize } from './utils'
 interface SearchResultsListProps {
   rsyncTasks: RsyncTask[]
@@ -10,7 +10,7 @@ interface SearchResultsListProps {
   downloadingId: string | null
   openLogModal: (dir: string, name: string) => void
   openRsyncLogModal: (name: string) => void
-  openDistributeModal: (item: { name: string; path?: string; server?: string; server_ip?: string }) => void
+  openDistributeModal: (item: DistributeItem) => void
   handleStartDownload: (item: HubModelItem) => void
   handleCopy: (text: string, id: string) => void
 }

@@ -1,12 +1,12 @@
 import React from 'react'
 import { RotateCw, Send } from 'lucide-react'
-import { RsyncTask, AggregatedModelAsset } from './types'
+import { RsyncTask, AggregatedModelAsset, DistributeItem } from './types'
 import { normalizeStrict, getQuantTag } from './utils'
 interface LocalAssetsListProps {
   filteredAggregated: AggregatedModelAsset[]
   rsyncTasks: RsyncTask[]
   openRsyncLogModal: (name: string) => void
-  openDistributeModal: (item: { name: string; path?: string; server?: string; server_ip?: string }) => void
+  openDistributeModal: (item: DistributeItem) => void
 }
 
 export const LocalAssetsList: React.FC<LocalAssetsListProps> = ({ filteredAggregated, rsyncTasks, openRsyncLogModal, openDistributeModal }) => {
